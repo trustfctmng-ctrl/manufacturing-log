@@ -599,15 +599,41 @@
     setTimeout(()=>{ overlay.hidden = true; }, 750);
   }
 
-  /* ============ 作業者名の記憶 ============ */
-  (async function initWorkerName(){
+  /* ============ Google Apps Script (スプレッドシート連携) ============ */
+  const GAS_URL = 'https://script.google.com/macros/s/AKfycbyr4qi0eCc9Z1DMvH6HYOfQFGLi9b9OFobZ4_rZjpu2TSyf5QRq7U995_yr9XISyy-_2w/exec';
+
+  async function gasList(){
+    const res = await fetch(GAS_URL + '?action=list');
+    if(!res.ok) throw new Error('一覧取得に失敗しました(HTTP ' + res.status + ')');
+    const data = await res.json();
+    return data.records || [];
+  }
+  async function gasSet(key, record){
+    const res = await fetch(GAS_URL, {
+      method: 'POST',
+      body: JSON.stringify({ action:'set', key, record })
+    });
+    if(!res.ok) throw new Error('保存に失敗しました(HTTP ' + res.status + ')');
+    return res.json();
+  }
+  async function gasDelete(key){
+    const res = await fetch(GAS_URL, {
+      method: 'POST',
+      body: JSON.stringify({ action:'delete', key })
+    });
+    if(!res.ok) throw new Error('削除に失敗しました(HTTP ' + res.status + ')');
+    return res.json();
+  }
+
+  /* ============ 作業者名の記憶(端末内のみ) ============ */
+  (function initWorkerName(){
     try{
-      const res = await window.storage.get('settings:worker-name', false);
-      if(res && res.value) $('f-worker').value = res.value;
-    }catch(e){ /* まだ保存なし */ }
+      const name = localStorage.getItem('worker-name');
+      if(name) $('f-worker').value = name;
+    }catch(e){ /* プライベートモードなどで使えない場合はスキップ */ }
   })();
-  async function rememberWorker(name){
-    try{ await window.storage.set('settings:worker-name', name, false); }catch(e){}
+  function rememberWorker(name){
+    try{ localStorage.setItem('worker-name', name); }catch(e){}
   }
 
   /* ============ ステージ管理(入力タブ内の画面遷移) ============ */
@@ -652,13 +678,26 @@
     $('scan-error').hidden = true;
     const video = $('qr-video');
     try{
-      scanStream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' } });
+      scanStream = await navigator.mediaDevices.getUserMedia({
+        video:{
+          facingMode:'environment',
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        }
+      });
       video.srcObject = scanStream;
       await video.play();
       scanning = true;
       requestAnimationFrame(tickScan);
     }catch(e){
-      showScanError('カメラを起動できませんでした。ブラウザのカメラ利用を許可するか、手入力をご利用ください。');
+      const name = e && e.name ? e.name : '';
+      const msg = e && e.message ? e.message : String(e);
+      console.error('camera error', e);
+      if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+        showScanError('このブラウザ／画面はカメラ機能(getUserMedia)に対応していません。[' + location.protocol + ']');
+      } else {
+        showScanError('カメラを起動できませんでした（' + name + ': ' + msg + '）。ブラウザのカメラ利用を許可するか、手入力をご利用ください。');
+      }
     }
   }
 
@@ -679,7 +718,7 @@
       ctx.drawImage(video, 0, 0, scanCanvas.width, scanCanvas.height);
       const imageData = ctx.getImageData(0, 0, scanCanvas.width, scanCanvas.height);
       let code = null;
-      try{ code = window.jsQR ? jsQR(imageData.data, imageData.width, imageData.height) : null; }
+      try{ code = window.jsQR ? jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'attemptBoth' }) : null; }
       catch(e){ code = null; }
       if(code && code.data){
         handleQrResult(code.data);
@@ -730,7 +769,7 @@
 
   async function beginWork(lot){
     const worker = $('f-worker').value.trim();
-    await rememberWorker(worker);
+    rememberWorker(worker);
     const now = new Date();
     activeRecord = {
       date: now.toISOString().slice(0,10),
@@ -752,19 +791,16 @@
     pauseState = { paused:false, pauseStartedAt:null, pauseCount:0, pausedMinutes:0 };
 
     try{
-      const result = await window.storage.set(activeKey, JSON.stringify(activeRecord), true);
-      if(!result){
-        toast('記録の登録に失敗しました。もう一度お試しください。');
-        activeKey = null; activeRecord = null;
-        setStage('idle');
-        return;
-      }
+      await gasSet(activeKey, activeRecord);
       showStamp('開始受付');
       renderWorking();
       setStage('working');
       startTimer();
     }catch(e){
-      toast('登録中にエラーが発生しました。');
+      const detail = (e && (e.message || e.toString)) ? (e.message || e.toString()) : String(e);
+      toast('登録中にエラーが発生しました：' + detail);
+      console.error('beginWork error', e);
+      activeKey = null; activeRecord = null;
       setStage('idle');
     }
   }
@@ -850,12 +886,12 @@
     $('btn-finish').disabled = true;
     $('btn-finish').textContent = '記録中…';
     try{
-      await window.storage.set(activeKey, JSON.stringify(activeRecord), true);
+      await gasSet(activeKey, activeRecord);
       stopTimer();
       showStamp('作業終了');
       toast('お疲れ様でした。作業記録を保存しました。');
     }catch(e){
-      toast('保存に失敗しました。一覧タブで記録をご確認ください。');
+      toast('保存に失敗しました：' + (e && e.message ? e.message : e));
     }finally{
       $('btn-finish').disabled = false;
       $('btn-finish').textContent = '作業終了';
@@ -865,21 +901,12 @@
   });
 
   /* ============ 一覧 ============ */
+  let lastFetchedRecords = [];
   async function fetchAllRecords(){
-    const listRes = await window.storage.list('record:', true);
-    const keys = (listRes && listRes.keys) ? listRes.keys : [];
-    const records = [];
-    for(const key of keys){
-      try{
-        const r = await window.storage.get(key, true);
-        if(r && r.value){
-          const parsed = JSON.parse(r.value);
-          parsed._key = key;
-          records.push(parsed);
-        }
-      }catch(e){ /* 破損データはスキップ */ }
-    }
-    records.sort((a,b)=> (b.savedAt||'').localeCompare(a.savedAt||''));
+    const records = await gasList();
+    records.forEach(r => { r._key = r.key; });
+    records.sort((a,b)=> (String(b.savedAt||'')).localeCompare(String(a.savedAt||'')));
+    lastFetchedRecords = records;
     return records;
   }
 
@@ -937,28 +964,26 @@
         btn.addEventListener('click', async ()=>{
           if(!confirm('この記録を削除しますか？')) return;
           try{
-            await window.storage.delete(btn.dataset.key, true);
+            await gasDelete(btn.dataset.key);
             toast('削除しました');
             loadList();
-          }catch(e){ toast('削除に失敗しました'); }
+          }catch(e){ toast('削除に失敗しました：' + (e && e.message ? e.message : e)); }
         });
       });
       body.querySelectorAll('.edit').forEach(btn=>{
-        btn.addEventListener('click', async ()=>{
-          try{
-            const r = await window.storage.get(btn.dataset.key, true);
-            if(!r || !r.value) return;
-            editingKey = btn.dataset.key;
-            editingRecord = JSON.parse(r.value);
-            $('edit-actual-qty').value = editingRecord.actualQty ?? editingRecord.plannedQty ?? '';
-            $('edit-defect').value = editingRecord.defect ?? 0;
-            $('edit-note').value = editingRecord.note ?? '';
-            $('edit-modal').hidden = false;
-          }catch(e){ toast('読み込みに失敗しました'); }
+        btn.addEventListener('click', ()=>{
+          const r = lastFetchedRecords.find(rec => rec._key === btn.dataset.key);
+          if(!r) return;
+          editingKey = btn.dataset.key;
+          editingRecord = Object.assign({}, r);
+          $('edit-actual-qty').value = editingRecord.actualQty ?? editingRecord.plannedQty ?? '';
+          $('edit-defect').value = editingRecord.defect ?? 0;
+          $('edit-note').value = editingRecord.note ?? '';
+          $('edit-modal').hidden = false;
         });
       });
     }catch(e){
-      status.textContent = '読み込みに失敗しました。電波状況を確認し、再度お試しください。';
+      status.textContent = '読み込みに失敗しました：' + (e && e.message ? e.message : e);
     }
   }
 
@@ -969,11 +994,11 @@
     editingRecord.defect = $('edit-defect').value !== '' ? Number($('edit-defect').value) : 0;
     editingRecord.note = $('edit-note').value.trim();
     try{
-      await window.storage.set(editingKey, JSON.stringify(editingRecord), true);
+      await gasSet(editingKey, editingRecord);
       $('edit-modal').hidden = true;
       toast('更新しました');
       loadList();
-    }catch(e){ toast('更新に失敗しました'); }
+    }catch(e){ toast('更新に失敗しました：' + (e && e.message ? e.message : e)); }
     editingKey = null; editingRecord = null;
   });
 
