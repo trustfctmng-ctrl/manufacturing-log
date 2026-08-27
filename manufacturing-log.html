@@ -499,8 +499,19 @@
 
     <!-- 進行中ロット一覧画面(複数同時進行対応) -->
     <div id="stage-working" hidden>
-      <button class="btn-secondary" id="btn-add-another" style="margin-bottom:14px;">＋ 別のロットを開始する</button>
+      <button class="btn-secondary" id="btn-add-another" style="margin-bottom:10px;">＋ 別のロットを開始する</button>
+      <button class="btn-ghost" id="btn-end-of-day" style="margin-bottom:14px;">本日の業務を終了する（全ロット一時中断）</button>
       <div id="active-jobs-list"></div>
+    </div>
+
+    <!-- 業務終了(ロック)画面 -->
+    <div id="stage-locked" hidden>
+      <div class="idle-hero">
+        <span class="ic">🌙</span>
+        <p>本日の業務は終了しました。<br>お疲れ様でした。</p>
+        <p class="helper" id="locked-summary"></p>
+      </div>
+      <button class="btn-primary" id="btn-resume-day">本日の作業を開始する</button>
     </div>
 
   </main>
@@ -710,7 +721,8 @@
     idle: $('stage-idle'),
     scan: $('stage-scan'),
     manual: $('stage-manual'),
-    working: $('stage-working')
+    working: $('stage-working'),
+    locked: $('stage-locked')
   };
   let currentStage = 'idle';
   function setStage(name){
@@ -944,6 +956,85 @@
 
   $('btn-add-another').addEventListener('click', ()=>{
     setStage('idle');
+  });
+
+  /* ============ 本日の業務終了 / 翌日の一括再開 ============ */
+  $('btn-end-of-day').addEventListener('click', ()=>{
+    const keys = Object.keys(activeJobs);
+    if(keys.length === 0) return;
+    if(!confirm('本日の業務を終了しますか？\n進行中の全ロット（' + keys.length + '件）が一時中断され、明日「本日の作業を開始する」を押すまで再開できません。')) return;
+
+    const now = new Date();
+    const jobsSnapshot = {};
+    keys.forEach(key=>{
+      const job = activeJobs[key];
+      const ps = job.pauseState;
+      if(!ps.paused){
+        ps.paused = true;
+        ps.pauseStartedAt = now.toISOString();
+      }
+      jobsSnapshot[key] = {
+        pauseStartedAt: ps.pauseStartedAt,
+        pauseCount: ps.pauseCount,
+        pausedMinutes: ps.pausedMinutes
+      };
+    });
+
+    try{
+      localStorage.setItem('day-lock-state', JSON.stringify({ lockedAt: now.toISOString(), jobs: jobsSnapshot }));
+      localStorage.setItem('day-locked', 'true');
+    }catch(e){ console.error('day-lock save failed', e); }
+
+    stopJobsTimerIfEmpty(); // 一旦タイマーは止めておく(ロック中は経過表示不要)
+    if(jobsTimerInterval){ clearInterval(jobsTimerInterval); jobsTimerInterval = null; }
+    $('locked-summary').textContent = '進行中ロット ' + keys.length + '件を中断して終了しました。';
+    setStage('locked');
+  });
+
+  $('btn-resume-day').addEventListener('click', async ()=>{
+    $('btn-resume-day').disabled = true;
+    $('btn-resume-day').textContent = '再開中…';
+    try{
+      // アクティブジョブが空(端末再起動などでメモリが消えている)場合はまず復元
+      if(Object.keys(activeJobs).length === 0){
+        await rehydrateActiveJobsCore();
+      }
+      let lockState = null;
+      try{ lockState = JSON.parse(localStorage.getItem('day-lock-state') || 'null'); }catch(e){ lockState = null; }
+
+      if(lockState && lockState.jobs){
+        const now = new Date();
+        Object.keys(lockState.jobs).forEach(key=>{
+          const job = activeJobs[key];
+          if(!job) return;
+          const snap = lockState.jobs[key];
+          const pauseStart = new Date(snap.pauseStartedAt).getTime();
+          const addedMinutes = (now.getTime() - pauseStart) / 60000;
+          job.pauseState = {
+            paused: false,
+            pauseStartedAt: null,
+            pauseCount: (snap.pauseCount || 0) + 1,
+            pausedMinutes: (snap.pausedMinutes || 0) + addedMinutes
+          };
+        });
+      }
+
+      try{
+        localStorage.removeItem('day-lock-state');
+        localStorage.removeItem('day-locked');
+      }catch(e){}
+
+      renderActiveJobsList();
+      startJobsTimer();
+      setStage('working');
+      toast('本日の作業を再開しました。');
+    }catch(e){
+      console.error('resume day error', e);
+      toast('再開処理でエラーが発生しました。');
+    }finally{
+      $('btn-resume-day').disabled = false;
+      $('btn-resume-day').textContent = '本日の作業を開始する';
+    }
   });
 
 
@@ -1263,27 +1354,48 @@
     }
   });
 
-  setStage('idle');
-
-  /* ============ 起動時に進行中ロットを復元 ============ */
-  (async function rehydrateActiveJobs(){
+  /* ============ 起動時に進行中ロットを復元(共通処理) ============ */
+  async function rehydrateActiveJobsCore(){
     const worker = (function(){ try{ return localStorage.getItem('worker-name') || ''; }catch(e){ return ''; } })();
-    if(!worker) return;
+    if(!worker) return 0;
     try{
       const all = await gasList();
       const mine = all.filter(r => r.status === 'in_progress' && r.worker === worker);
-      if(mine.length === 0) return;
       mine.forEach(r=>{
-        activeJobs[r.key] = {
-          record: r,
-          pauseState: { paused:false, pauseStartedAt:null, pauseCount: Number(r.pauseCount)||0, pausedMinutes: Number(r.pausedMinutes)||0 }
-        };
+        if(!activeJobs[r.key]){
+          activeJobs[r.key] = {
+            record: r,
+            pauseState: { paused:false, pauseStartedAt:null, pauseCount: Number(r.pauseCount)||0, pausedMinutes: Number(r.pausedMinutes)||0 }
+          };
+        }
       });
-      setStage('working');
-      startJobsTimer();
-      toast('進行中のロットを' + mine.length + '件復元しました。');
+      return mine.length;
     }catch(e){
       console.error('rehydrate error', e);
+      return 0;
+    }
+  }
+
+  /* ============ アプリ起動 ============ */
+  (async function bootApp(){
+    let isLocked = false;
+    try{ isLocked = localStorage.getItem('day-locked') === 'true'; }catch(e){}
+
+    if(isLocked){
+      let lockState = null;
+      try{ lockState = JSON.parse(localStorage.getItem('day-lock-state') || 'null'); }catch(e){}
+      const count = lockState && lockState.jobs ? Object.keys(lockState.jobs).length : 0;
+      $('locked-summary').textContent = count ? ('中断中のロット ' + count + '件があります。') : '';
+      setStage('locked');
+      return;
+    }
+
+    setStage('idle');
+    const count = await rehydrateActiveJobsCore();
+    if(count > 0){
+      setStage('working');
+      startJobsTimer();
+      toast('進行中のロットを' + count + '件復元しました。');
     }
   })();
 })();
