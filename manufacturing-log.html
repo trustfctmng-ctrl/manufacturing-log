@@ -304,6 +304,27 @@
     letter-spacing:0.04em;
   }
 
+  .job-card{
+    background:var(--ink); color:#fff;
+    border-radius:12px; padding:14px 16px;
+    margin-bottom:12px;
+  }
+  .job-card .badge.paused{background:var(--pause); color:#fff;}
+  .job-card .top-row{display:flex; justify-content:space-between; align-items:flex-start; gap:10px;}
+  .job-card .product{font-size:17px; font-weight:700;}
+  .job-card .meta-line{font-size:12.5px; color:#C9D0D8; margin-top:4px;}
+  .job-card .timer{
+    font-size:24px; margin-top:6px; margin-bottom:0; text-align:left;
+  }
+  .job-card .job-btns{display:flex; gap:10px; margin-top:12px;}
+  .job-card .job-btns button{
+    flex:1; padding:11px; border-radius:8px; font-size:14px; font-weight:700;
+    font-family:'Noto Sans JP',sans-serif; border:2px solid transparent;
+  }
+  .job-card .btn-pause-mini{ background:rgba(255,255,255,0.12); color:#fff; border-color:rgba(255,255,255,0.4); }
+  .job-card .btn-pause-mini.is-paused{ background:var(--pause); border-color:var(--pause); }
+  .job-card .btn-finish-mini{ background:var(--danger); color:#fff; }
+
   .rec-card{
     background:var(--card);
     border:1px solid var(--line);
@@ -416,6 +437,9 @@
 
     <!-- 待機画面 -->
     <div id="stage-idle">
+      <div id="idle-back-link" hidden style="text-align:center; margin-bottom:14px;">
+        <button class="btn-ghost" id="btn-back-to-jobs">← 進行中のロット一覧に戻る</button>
+      </div>
       <div class="card">
         <div class="field">
           <label>作業者名<span class="req">*</span></label>
@@ -465,44 +489,38 @@
       <div class="helper" id="manual-error"></div>
     </div>
 
-    <!-- 作業中画面 -->
+    <!-- 進行中ロット一覧画面(複数同時進行対応) -->
     <div id="stage-working" hidden>
-      <div class="lot-card">
-        <span class="badge" id="work-badge">作業中</span>
-        <div class="product" id="w-product">-</div>
-        <div class="grid">
-          <div>注文番号<b id="w-order">-</b></div>
-          <div>製作数量<b id="w-qty">-</b></div>
-          <div>作業者<b id="w-worker">-</b></div>
-          <div>開始時刻<b id="w-start">-</b></div>
-        </div>
-        <div class="timer" id="w-timer">00:00:00</div>
-      </div>
-
-      <div class="card">
-        <div class="row2">
-          <div class="field">
-            <label>実績数量<span class="opt">(任意)</span></label>
-            <input type="number" id="w-actual-qty" inputmode="numeric" min="0">
-          </div>
-          <div class="field">
-            <label>不良数<span class="opt">(任意)</span></label>
-            <input type="number" id="w-defect" inputmode="numeric" min="0" placeholder="0">
-          </div>
-        </div>
-        <div class="field">
-          <label>備考<span class="opt">(任意)</span></label>
-          <textarea id="w-note" placeholder="例）14時より段取り替え、設備異常なし"></textarea>
-        </div>
-      </div>
-
-      <div class="btn-stack">
-        <button class="btn-pause" id="btn-pause">中断</button>
-        <button class="btn-danger" id="btn-finish">作業終了</button>
-      </div>
+      <button class="btn-secondary" id="btn-add-another" style="margin-bottom:14px;">＋ 別のロットを開始する</button>
+      <div id="active-jobs-list"></div>
     </div>
 
   </main>
+
+  <!-- 作業終了確認モーダル -->
+  <div id="finish-modal" class="modal-overlay" hidden>
+    <div class="modal-sheet">
+      <h3 id="finish-modal-title">作業終了の確認</h3>
+      <div class="row2">
+        <div class="field">
+          <label>実績数量</label>
+          <input type="number" id="finish-actual-qty" min="0">
+        </div>
+        <div class="field">
+          <label>不良数</label>
+          <input type="number" id="finish-defect" min="0">
+        </div>
+      </div>
+      <div class="field">
+        <label>備考</label>
+        <textarea id="finish-note" placeholder="例）14時より段取り替え、設備異常なし"></textarea>
+      </div>
+      <div class="btn-stack">
+        <button class="btn-danger" id="finish-confirm">この内容で作業終了する</button>
+        <button class="btn-ghost" id="finish-cancel">キャンセル</button>
+      </div>
+    </div>
+  </div>
 
   <!-- ================= 一覧タブ ================= -->
   <main id="view-list" hidden>
@@ -664,6 +682,16 @@
   function setStage(name){
     currentStage = name;
     Object.keys(stages).forEach(k => stages[k].hidden = (k!==name));
+    if(name === 'working'){
+      renderActiveJobsList();
+    }
+    if(name === 'idle'){
+      const backLink = $('idle-back-link');
+      if(backLink) backLink.hidden = Object.keys(activeJobs).length === 0;
+    }
+  }
+  function stageAfterCancel(){
+    return Object.keys(activeJobs).length > 0 ? 'working' : 'idle';
   }
 
   $('btn-open-scan').addEventListener('click', ()=>{
@@ -674,6 +702,7 @@
     }
     startScan();
   });
+  $('btn-back-to-jobs').addEventListener('click', ()=> setStage('working'));
   $('btn-open-manual').addEventListener('click', ()=>{
     $('idle-error').textContent = '';
     if(!$('f-worker').value.trim()){
@@ -682,8 +711,8 @@
     }
     setStage('manual');
   });
-  $('btn-manual-cancel').addEventListener('click', ()=> setStage('idle'));
-  $('btn-cancel-scan').addEventListener('click', ()=>{ cancelScan(); setStage('idle'); });
+  $('btn-manual-cancel').addEventListener('click', ()=> setStage(stageAfterCancel()));
+  $('btn-cancel-scan').addEventListener('click', ()=>{ cancelScan(); setStage(stageAfterCancel()); });
   $('btn-scan-to-manual').addEventListener('click', ()=>{ cancelScan(); setStage('manual'); });
 
   /* ============ QRスキャン ============ */
@@ -820,16 +849,15 @@
   });
 
   /* ============ 作業開始(QR/手入力 共通) ============ */
-  let activeKey = null;
-  let activeRecord = null;
-  let pauseState = { paused:false, pauseStartedAt:null, pauseCount:0, pausedMinutes:0 };
-  let timerInterval = null;
+  // activeJobs: { [key]: { record, pauseState:{paused,pauseStartedAt,pauseCount,pausedMinutes} } }
+  let activeJobs = {};
+  let jobsTimerInterval = null;
 
   async function beginWork(lot){
     const worker = $('f-worker').value.trim();
     rememberWorker(worker);
     const now = new Date();
-    activeRecord = {
+    const record = {
       date: now.toISOString().slice(0,10),
       worker: worker,
       orderNo: lot.orderNo,
@@ -845,116 +873,171 @@
       status: 'in_progress',
       savedAt: now.toISOString()
     };
-    activeKey = 'record:' + Date.now() + '-' + Math.random().toString(36).slice(2,8);
-    pauseState = { paused:false, pauseStartedAt:null, pauseCount:0, pausedMinutes:0 };
+    const key = 'record:' + Date.now() + '-' + Math.random().toString(36).slice(2,8);
 
     try{
-      await gasSet(activeKey, activeRecord);
+      await gasSet(key, record);
+      activeJobs[key] = { record, pauseState: { paused:false, pauseStartedAt:null, pauseCount:0, pausedMinutes:0 } };
       showStamp('開始受付');
-      renderWorking();
+      renderActiveJobsList();
       setStage('working');
-      startTimer();
+      startJobsTimer();
     }catch(e){
       const detail = (e && (e.message || e.toString)) ? (e.message || e.toString()) : String(e);
       toast('登録中にエラーが発生しました：' + detail);
       console.error('beginWork error', e);
-      activeKey = null; activeRecord = null;
-      setStage('idle');
+      setStage(Object.keys(activeJobs).length ? 'working' : 'idle');
     }
   }
 
-  function renderWorking(){
-    $('w-product').textContent = activeRecord.product;
-    $('w-order').textContent = activeRecord.orderNo;
-    $('w-qty').textContent = activeRecord.plannedQty;
-    $('w-worker').textContent = activeRecord.worker;
-    $('w-start').textContent = new Date(activeRecord.startTime).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'});
-    $('w-actual-qty').value = activeRecord.actualQty;
-    $('w-defect').value = activeRecord.defect;
-    $('w-note').value = activeRecord.note;
-    $('btn-pause').textContent = '中断';
-    $('btn-pause').classList.remove('is-paused');
-    $('work-badge').textContent = '作業中';
-    $('work-badge').classList.remove('paused');
-  }
-
-  function startTimer(){
-    stopTimer();
-    updateTimerDisplay();
-    timerInterval = setInterval(updateTimerDisplay, 1000);
-  }
-  function stopTimer(){
-    if(timerInterval){ clearInterval(timerInterval); timerInterval = null; }
-  }
-  function updateTimerDisplay(){
-    if(!activeRecord) return;
-    const start = new Date(activeRecord.startTime).getTime();
-    const now = pauseState.paused ? new Date(pauseState.pauseStartedAt).getTime() : Date.now();
-    let elapsedMs = now - start - pauseState.pausedMinutes*60000;
-    if(elapsedMs < 0) elapsedMs = 0;
-    const totalSec = Math.floor(elapsedMs/1000);
-    const h = Math.floor(totalSec/3600);
-    const m = Math.floor((totalSec%3600)/60);
-    const s = totalSec%60;
-    $('w-timer').textContent = pad(h)+':'+pad(m)+':'+pad(s);
-  }
-
-  /* ============ 中断 / 再開 ============ */
-  $('btn-pause').addEventListener('click', ()=>{
-    if(!pauseState.paused){
-      pauseState.paused = true;
-      pauseState.pauseStartedAt = new Date().toISOString();
-      $('btn-pause').textContent = '再開';
-      $('btn-pause').classList.add('is-paused');
-      $('work-badge').textContent = '中断中';
-      $('work-badge').classList.add('paused');
-    } else {
-      const pausedMs = Date.now() - new Date(pauseState.pauseStartedAt).getTime();
-      pauseState.pausedMinutes += pausedMs/60000;
-      pauseState.pauseCount += 1;
-      pauseState.paused = false;
-      pauseState.pauseStartedAt = null;
-      $('btn-pause').textContent = '中断';
-      $('btn-pause').classList.remove('is-paused');
-      $('work-badge').textContent = '作業中';
-      $('work-badge').classList.remove('paused');
-    }
-    updateTimerDisplay();
+  $('btn-add-another').addEventListener('click', ()=>{
+    setStage('idle');
   });
 
-  /* ============ 作業終了 ============ */
-  $('btn-finish').addEventListener('click', async ()=>{
-    if(!activeRecord || !activeKey) return;
-    if(pauseState.paused){
-      const pausedMs = Date.now() - new Date(pauseState.pauseStartedAt).getTime();
-      pauseState.pausedMinutes += pausedMs/60000;
-      pauseState.pauseCount += 1;
-      pauseState.paused = false;
+  function renderActiveJobsList(){
+    const container = $('active-jobs-list');
+    const keys = Object.keys(activeJobs);
+    if(keys.length === 0){
+      container.innerHTML = '<div class="empty"><span class="big">🗂️</span>進行中のロットはありません。</div>';
+      return;
+    }
+    container.innerHTML = '';
+    keys.forEach(key=>{
+      const job = activeJobs[key];
+      const r = job.record;
+      const isPaused = job.pauseState.paused;
+      const div = document.createElement('div');
+      div.className = 'job-card';
+      div.dataset.key = key;
+      div.innerHTML =
+        '<div class="top-row">' +
+          '<div>' +
+            '<span class="badge' + (isPaused ? ' paused' : '') + '" data-role="badge">' + (isPaused ? '中断中' : '作業中') + '</span>' +
+            '<div class="product">' + escapeHtml(r.product) + '</div>' +
+            '<div class="meta-line">注文番号 ' + escapeHtml(r.orderNo) + ' ・ 数量 ' + r.plannedQty + ' ・ ' + escapeHtml(r.worker) + '</div>' +
+            '<div class="meta-line">開始 ' + new Date(r.startTime).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'}) + '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="timer" data-role="timer">00:00:00</div>' +
+        '<div class="job-btns">' +
+          '<button class="btn-pause-mini' + (isPaused ? ' is-paused' : '') + '" data-role="pause">' + (isPaused ? '再開' : '中断') + '</button>' +
+          '<button class="btn-finish-mini" data-role="finish">作業終了</button>' +
+        '</div>';
+      container.appendChild(div);
+
+      div.querySelector('[data-role="pause"]').addEventListener('click', ()=> togglePauseJob(key));
+      div.querySelector('[data-role="finish"]').addEventListener('click', ()=> openFinishModal(key));
+    });
+  }
+
+  function togglePauseJob(key){
+    const job = activeJobs[key];
+    if(!job) return;
+    const ps = job.pauseState;
+    if(!ps.paused){
+      ps.paused = true;
+      ps.pauseStartedAt = new Date().toISOString();
+    } else {
+      const pausedMs = Date.now() - new Date(ps.pauseStartedAt).getTime();
+      ps.pausedMinutes += pausedMs/60000;
+      ps.pauseCount += 1;
+      ps.paused = false;
+      ps.pauseStartedAt = null;
+    }
+    renderActiveJobsList();
+    updateAllJobTimers();
+  }
+
+  function startJobsTimer(){
+    if(jobsTimerInterval) return;
+    jobsTimerInterval = setInterval(updateAllJobTimers, 1000);
+    updateAllJobTimers();
+  }
+  function stopJobsTimerIfEmpty(){
+    if(Object.keys(activeJobs).length === 0 && jobsTimerInterval){
+      clearInterval(jobsTimerInterval);
+      jobsTimerInterval = null;
+    }
+  }
+  function updateAllJobTimers(){
+    const container = $('active-jobs-list');
+    if(!container) return;
+    container.querySelectorAll('.job-card').forEach(card=>{
+      const key = card.dataset.key;
+      const job = activeJobs[key];
+      if(!job) return;
+      const r = job.record;
+      const ps = job.pauseState;
+      const start = new Date(r.startTime).getTime();
+      const now = ps.paused ? new Date(ps.pauseStartedAt).getTime() : Date.now();
+      let elapsedMs = now - start - ps.pausedMinutes*60000;
+      if(elapsedMs < 0) elapsedMs = 0;
+      const totalSec = Math.floor(elapsedMs/1000);
+      const h = Math.floor(totalSec/3600);
+      const m = Math.floor((totalSec%3600)/60);
+      const s = totalSec%60;
+      const timerEl = card.querySelector('[data-role="timer"]');
+      if(timerEl) timerEl.textContent = pad(h)+':'+pad(m)+':'+pad(s);
+    });
+  }
+
+  /* ============ 作業終了(確認モーダル経由) ============ */
+  let finishingKey = null;
+  function openFinishModal(key){
+    const job = activeJobs[key];
+    if(!job) return;
+    finishingKey = key;
+    $('finish-modal-title').textContent = '「' + job.record.product + '」の作業終了';
+    $('finish-actual-qty').value = job.record.actualQty ?? job.record.plannedQty;
+    $('finish-defect').value = job.record.defect ?? 0;
+    $('finish-note').value = job.record.note ?? '';
+    $('finish-modal').hidden = false;
+  }
+  $('finish-cancel').addEventListener('click', ()=>{
+    $('finish-modal').hidden = true;
+    finishingKey = null;
+  });
+  $('finish-confirm').addEventListener('click', async ()=>{
+    const key = finishingKey;
+    const job = activeJobs[key];
+    if(!job) return;
+    const ps = job.pauseState;
+    if(ps.paused){
+      const pausedMs = Date.now() - new Date(ps.pauseStartedAt).getTime();
+      ps.pausedMinutes += pausedMs/60000;
+      ps.pauseCount += 1;
+      ps.paused = false;
     }
     const now = new Date();
-    activeRecord.endTime = now.toISOString();
-    activeRecord.actualQty = $('w-actual-qty').value !== '' ? Number($('w-actual-qty').value) : activeRecord.plannedQty;
-    activeRecord.defect = $('w-defect').value !== '' ? Number($('w-defect').value) : 0;
-    activeRecord.note = $('w-note').value.trim();
-    activeRecord.pauseCount = pauseState.pauseCount;
-    activeRecord.pausedMinutes = Math.round(pauseState.pausedMinutes*10)/10;
-    activeRecord.status = 'completed';
-    activeRecord.savedAt = now.toISOString();
+    const r = job.record;
+    r.endTime = now.toISOString();
+    r.actualQty = $('finish-actual-qty').value !== '' ? Number($('finish-actual-qty').value) : r.plannedQty;
+    r.defect = $('finish-defect').value !== '' ? Number($('finish-defect').value) : 0;
+    r.note = $('finish-note').value.trim();
+    r.pauseCount = ps.pauseCount;
+    r.pausedMinutes = Math.round(ps.pausedMinutes*10)/10;
+    r.status = 'completed';
+    r.savedAt = now.toISOString();
 
-    $('btn-finish').disabled = true;
-    $('btn-finish').textContent = '記録中…';
+    $('finish-confirm').disabled = true;
+    $('finish-confirm').textContent = '記録中…';
     try{
-      await gasSet(activeKey, activeRecord);
-      stopTimer();
+      await gasSet(key, r);
       showStamp('作業終了');
-      toast('お疲れ様でした。作業記録を保存しました。');
+      toast('「' + r.product + '」の記録を保存しました。');
+      delete activeJobs[key];
+      $('finish-modal').hidden = true;
+      finishingKey = null;
+      renderActiveJobsList();
+      stopJobsTimerIfEmpty();
+      if(Object.keys(activeJobs).length === 0){
+        setStage('idle');
+      }
     }catch(e){
       toast('保存に失敗しました：' + (e && e.message ? e.message : e));
     }finally{
-      $('btn-finish').disabled = false;
-      $('btn-finish').textContent = '作業終了';
-      activeKey = null; activeRecord = null;
-      setStage('idle');
+      $('finish-confirm').disabled = false;
+      $('finish-confirm').textContent = 'この内容で作業終了する';
     }
   });
 
@@ -1134,6 +1217,28 @@
   });
 
   setStage('idle');
+
+  /* ============ 起動時に進行中ロットを復元 ============ */
+  (async function rehydrateActiveJobs(){
+    const worker = (function(){ try{ return localStorage.getItem('worker-name') || ''; }catch(e){ return ''; } })();
+    if(!worker) return;
+    try{
+      const all = await gasList();
+      const mine = all.filter(r => r.status === 'in_progress' && r.worker === worker);
+      if(mine.length === 0) return;
+      mine.forEach(r=>{
+        activeJobs[r.key] = {
+          record: r,
+          pauseState: { paused:false, pauseStartedAt:null, pauseCount: Number(r.pauseCount)||0, pausedMinutes: Number(r.pausedMinutes)||0 }
+        };
+      });
+      setStage('working');
+      startJobsTimer();
+      toast('進行中のロットを' + mine.length + '件復元しました。');
+    }catch(e){
+      console.error('rehydrate error', e);
+    }
+  })();
 })();
 </script>
 </body>
