@@ -421,6 +421,14 @@
   @keyframes spin{to{transform:rotate(360deg);}}
 
   .helper{font-size:12px; color:var(--ink-soft); margin-top:6px; line-height:1.5;}
+
+  .coworker-item{
+    display:flex; align-items:center; gap:10px;
+    padding:11px 4px; border-bottom:1px solid var(--line);
+    font-size:15px;
+  }
+  .coworker-item:last-child{border-bottom:none;}
+  .coworker-item input[type=checkbox]{ width:20px; height:20px; }
 </style>
 </head>
 <body>
@@ -440,11 +448,16 @@
       <div id="idle-back-link" hidden style="text-align:center; margin-bottom:14px;">
         <button class="btn-ghost" id="btn-back-to-jobs">← 進行中のロット一覧に戻る</button>
       </div>
-      <div class="card">
+      <div class="card" id="worker-input-block">
         <div class="field">
           <label>作業者名<span class="req">*</span></label>
           <input type="text" id="f-worker" placeholder="例）山田 太郎" autocomplete="off">
         </div>
+        <button class="btn-ghost" id="btn-save-worker" style="padding:8px; margin-top:2px;">この名前をこの端末に保存する</button>
+      </div>
+      <div class="card" id="worker-display-block" hidden style="display:flex; align-items:center; justify-content:space-between; padding:14px 16px;">
+        <div style="font-size:14px;">作業者：<b id="worker-name-label" style="font-size:16px;"></b></div>
+        <button class="btn-ghost" id="btn-change-worker" style="padding:4px;">変更</button>
       </div>
       <div class="idle-hero">
         <span class="ic">📷</span>
@@ -487,6 +500,20 @@
       <button class="btn-primary" id="btn-manual-start">この内容で作業開始</button>
       <button class="btn-ghost" id="btn-manual-cancel">戻る</button>
       <div class="helper" id="manual-error"></div>
+    </div>
+
+    <!-- 共同作業者選択画面 -->
+    <div id="stage-coworkers" hidden>
+      <div class="card">
+        <div class="section-title" style="margin-top:0;">一緒に作業する人はいますか？</div>
+        <div id="coworker-checklist" style="margin-bottom:10px;"></div>
+        <div class="row2" style="grid-template-columns: 1fr auto;">
+          <input type="text" id="coworker-new-name" placeholder="名前を追加" autocomplete="off">
+          <button class="btn-secondary" id="btn-coworker-add" style="white-space:nowrap;">＋追加</button>
+        </div>
+      </div>
+      <button class="btn-primary" id="btn-coworker-confirm">このメンバーで作業開始</button>
+      <button class="btn-ghost" id="btn-coworker-skip">誰もチェックせず一人で開始する</button>
     </div>
 
     <!-- 進行中ロット一覧画面(複数同時進行対応) -->
@@ -661,21 +688,48 @@
   }
 
   /* ============ 作業者名の記憶(端末内のみ) ============ */
-  (function initWorkerName(){
-    try{
-      const name = localStorage.getItem('worker-name');
-      if(name) $('f-worker').value = name;
-    }catch(e){ /* プライベートモードなどで使えない場合はスキップ */ }
-  })();
+  function refreshWorkerUI(){
+    let name = '';
+    try{ name = localStorage.getItem('worker-name') || ''; }catch(e){}
+    if(name){
+      $('f-worker').value = name;
+      $('worker-name-label').textContent = name;
+      $('worker-input-block').hidden = true;
+      $('worker-display-block').hidden = false;
+    } else {
+      $('worker-input-block').hidden = false;
+      $('worker-display-block').hidden = true;
+    }
+  }
+  refreshWorkerUI();
+
   function rememberWorker(name){
     try{ localStorage.setItem('worker-name', name); }catch(e){}
   }
+
+  $('btn-save-worker').addEventListener('click', ()=>{
+    const name = $('f-worker').value.trim();
+    if(!name){
+      $('idle-error').textContent = '作業者名を入力してください。';
+      return;
+    }
+    rememberWorker(name);
+    $('idle-error').textContent = '';
+    refreshWorkerUI();
+    toast('この端末に「' + name + '」さんを保存しました。');
+  });
+
+  $('btn-change-worker').addEventListener('click', ()=>{
+    $('worker-input-block').hidden = false;
+    $('worker-display-block').hidden = true;
+  });
 
   /* ============ ステージ管理(入力タブ内の画面遷移) ============ */
   const stages = {
     idle: $('stage-idle'),
     scan: $('stage-scan'),
     manual: $('stage-manual'),
+    coworkers: $('stage-coworkers'),
     working: $('stage-working')
   };
   let currentStage = 'idle';
@@ -831,7 +885,7 @@
       return;
     }
     cancelScan();
-    beginWork({ orderNo: parts[0], product: parts[1], qty: Number(parts[2]) });
+    openCoworkersStage({ orderNo: parts[0], product: parts[1], qty: Number(parts[2]) });
   }
 
   /* ============ 手入力での開始 ============ */
@@ -845,7 +899,79 @@
       err.textContent = '注文番号・製作品番・製作数量は必須です。';
       return;
     }
-    beginWork({ orderNo: order, product: product, qty: Number(qty) });
+    openCoworkersStage({ orderNo: order, product: product, qty: Number(qty) });
+  });
+
+  /* ============ 共同作業者選択 ============ */
+  let pendingLot = null;
+  let knownWorkerNames = [];
+  let checkedCoworkers = new Set();
+
+  function openCoworkersStage(lot){
+    pendingLot = lot;
+    checkedCoworkers = new Set();
+    $('coworker-new-name').value = '';
+    $('coworker-checklist').innerHTML = '<div class="helper"><span class="spinner"></span>読み込み中…</div>';
+    setStage('coworkers');
+    loadKnownWorkerNames().then(renderCoworkerChecklist);
+  }
+
+  async function loadKnownWorkerNames(){
+    try{
+      const all = await gasList();
+      const set = new Set();
+      all.forEach(r=>{
+        if(r.worker) set.add(String(r.worker).trim());
+        if(r.coWorkers){
+          String(r.coWorkers).split(',').map(s=>s.trim()).filter(Boolean).forEach(n=>set.add(n));
+        }
+      });
+      knownWorkerNames = Array.from(set).filter(Boolean).sort((a,b)=>a.localeCompare(b,'ja'));
+    }catch(e){
+      console.error('loadKnownWorkerNames error', e);
+      knownWorkerNames = [];
+    }
+  }
+
+  function renderCoworkerChecklist(){
+    const myName = $('f-worker').value.trim();
+    const container = $('coworker-checklist');
+    const names = knownWorkerNames.filter(n => n && n !== myName);
+    if(names.length === 0){
+      container.innerHTML = '<div class="helper">まだ他の作業者の記録がありません。下から名前を追加してください。</div>';
+      return;
+    }
+    container.innerHTML = names.map(n =>
+      '<label class="coworker-item"><input type="checkbox" value="' + escapeHtml(n) + '"' +
+        (checkedCoworkers.has(n) ? ' checked' : '') + '> ' + escapeHtml(n) + '</label>'
+    ).join('');
+    container.querySelectorAll('input[type=checkbox]').forEach(cb=>{
+      cb.addEventListener('change', ()=>{
+        if(cb.checked) checkedCoworkers.add(cb.value);
+        else checkedCoworkers.delete(cb.value);
+      });
+    });
+  }
+
+  $('btn-coworker-add').addEventListener('click', ()=>{
+    const name = $('coworker-new-name').value.trim();
+    if(!name) return;
+    if(!knownWorkerNames.includes(name)) knownWorkerNames.push(name);
+    checkedCoworkers.add(name);
+    $('coworker-new-name').value = '';
+    renderCoworkerChecklist();
+  });
+
+  $('btn-coworker-confirm').addEventListener('click', ()=>{
+    const lot = pendingLot;
+    const coWorkers = Array.from(checkedCoworkers);
+    pendingLot = null;
+    beginWork(lot, coWorkers);
+  });
+  $('btn-coworker-skip').addEventListener('click', ()=>{
+    const lot = pendingLot;
+    pendingLot = null;
+    beginWork(lot, []);
   });
 
   /* ============ バックグラウンド保存(リトライ付き) ============ */
@@ -875,9 +1001,10 @@
   let activeJobs = {};
   let jobsTimerInterval = null;
 
-  function beginWork(lot){
+  function beginWork(lot, coWorkers){
     const worker = $('f-worker').value.trim();
     rememberWorker(worker);
+    refreshWorkerUI();
     const now = new Date();
     const record = {
       date: now.toISOString().slice(0,10),
@@ -888,6 +1015,7 @@
       actualQty: lot.qty,
       defect: 0,
       note: '',
+      coWorkers: (coWorkers && coWorkers.length) ? coWorkers.join(', ') : '',
       startTime: now.toISOString(),
       endTime: null,
       pauseCount: 0,
@@ -932,7 +1060,8 @@
           '<div>' +
             '<span class="badge' + (isPaused ? ' paused' : '') + '" data-role="badge">' + (isPaused ? '中断中' : '作業中') + '</span>' +
             '<div class="product">' + escapeHtml(r.product) + '</div>' +
-            '<div class="meta-line">注文番号 ' + escapeHtml(r.orderNo) + ' ・ 数量 ' + r.plannedQty + ' ・ ' + escapeHtml(r.worker) + '</div>' +
+            '<div class="meta-line">注文番号 ' + escapeHtml(r.orderNo) + ' ・ 数量 ' + r.plannedQty + ' ・ ' + escapeHtml(r.worker) +
+              (r.coWorkers ? (' ＋ ' + escapeHtml(r.coWorkers)) : '') + '</div>' +
             '<div class="meta-line">開始 ' + new Date(r.startTime).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'}) + '</div>' +
           '</div>' +
         '</div>' +
@@ -1096,7 +1225,8 @@
             '<div class="rec-main">' +
               '<div class="top-line">' + escapeHtml(rec.product||'') + '</div>' +
               '<div class="meta">' + escapeHtml(rec.date||'') + ' ・ ' + escapeHtml(rec.worker||'') +
-                (rec.orderNo ? (' ・ 注文 ' + escapeHtml(rec.orderNo)) : '') + '</div>' +
+                (rec.orderNo ? (' ・ 注文 ' + escapeHtml(rec.orderNo)) : '') +
+                (rec.coWorkers ? (' ＋ ' + escapeHtml(rec.coWorkers)) : '') + '</div>' +
               '<div class="meta">開始 ' + fmtTime(rec.startTime) + ' 〜 終了 ' + fmtTime(rec.endTime) +
                 (rec.pauseCount ? ('（中断 ' + rec.pauseCount + '回 / ' + Math.round(rec.pausedMinutes) + '分）') : '') + '</div>' +
               (rec.note ? '<div class="meta">' + escapeHtml(rec.note) + '</div>' : '') +
@@ -1197,9 +1327,9 @@
         $('csv-btn').disabled = false;
         return;
       }
-      const header = ['日付','作業者名','注文番号','製作品番','計画数量','実績数量','不良数','開始時刻','終了時刻','中断回数','中断時間(分)','状態','備考'];
+      const header = ['日付','作業者名','共同作業者','注文番号','製作品番','計画数量','実績数量','不良数','開始時刻','終了時刻','中断回数','中断時間(分)','状態','備考'];
       const rows = filtered.map(r => [
-        r.date, r.worker, r.orderNo||'', r.product||'', r.plannedQty ?? '', r.actualQty ?? '',
+        r.date, r.worker, r.coWorkers||'', r.orderNo||'', r.product||'', r.plannedQty ?? '', r.actualQty ?? '',
         r.defect ?? 0, fmtTime(r.startTime), fmtTime(r.endTime),
         r.pauseCount ?? 0, r.pausedMinutes ? Math.round(r.pausedMinutes) : 0,
         r.status==='completed' ? '完了' : '作業中', r.note||''
