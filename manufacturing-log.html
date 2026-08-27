@@ -689,6 +689,11 @@
   /* ============ QRスキャン ============ */
   let scanStream = null;
   let scanning = false;
+  let barcodeDetector = null;
+  if('BarcodeDetector' in window){
+    try{ barcodeDetector = new BarcodeDetector({ formats:['qr_code'] }); }
+    catch(e){ barcodeDetector = null; }
+  }
 
   async function startScan(){
     setStage('scan');
@@ -708,7 +713,7 @@
       video.srcObject = scanStream;
       await video.play();
       scanning = true;
-      requestAnimationFrame(tickScan);
+      tickScan();
     }catch(e){
       const name = e && e.name ? e.name : '';
       const msg = e && e.message ? e.message : String(e);
@@ -729,33 +734,54 @@
 
   const scanCanvas = document.createElement('canvas');
   let scanFrameCount = 0;
-  function tickScan(){
+
+  async function tickScan(){
     if(!scanning) return;
     const video = $('qr-video');
-    if(video.readyState === video.HAVE_ENOUGH_DATA){
+    if(video.readyState !== video.HAVE_ENOUGH_DATA){
+      requestAnimationFrame(tickScan);
+      return;
+    }
+
+    let rawValue = null;
+    let methodLabel = '';
+    let errText = '';
+
+    if(barcodeDetector){
+      methodLabel = 'BarcodeDetector';
+      try{
+        const results = await barcodeDetector.detect(video);
+        if(results && results.length){ rawValue = results[0].rawValue; }
+      }catch(e){ errText = (e && e.message) ? e.message : String(e); }
+    } else {
+      methodLabel = 'jsQR:' + (window.jsQR ? 'OK' : '未読込');
       scanCanvas.width = video.videoWidth;
       scanCanvas.height = video.videoHeight;
       const ctx = scanCanvas.getContext('2d', { willReadFrequently:true });
       ctx.drawImage(video, 0, 0, scanCanvas.width, scanCanvas.height);
       const imageData = ctx.getImageData(0, 0, scanCanvas.width, scanCanvas.height);
-      let code = null;
-      let jsqrError = '';
-      try{ code = window.jsQR ? jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'attemptBoth' }) : null; }
-      catch(e){ code = null; jsqrError = (e && e.message) ? e.message : String(e); }
-      scanFrameCount++;
-      if(scanFrameCount % 10 === 0){
-        const dbg = $('scan-debug');
-        if(dbg){
-          dbg.textContent = 'jsQR:' + (window.jsQR ? 'OK' : '未読込') +
-            ' / 解像度:' + scanCanvas.width + 'x' + scanCanvas.height +
-            ' / 試行:' + scanFrameCount +
-            (jsqrError ? (' / エラー:' + jsqrError) : '');
-        }
+      if(window.jsQR){
+        try{
+          const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'attemptBoth' });
+          if(code && code.data) rawValue = code.data;
+        }catch(e){ errText = (e && e.message) ? e.message : String(e); }
       }
-      if(code && code.data){
-        handleQrResult(code.data);
-        return;
+    }
+
+    scanFrameCount++;
+    if(scanFrameCount % 10 === 0){
+      const dbg = $('scan-debug');
+      if(dbg){
+        dbg.textContent = '検出方式:' + methodLabel +
+          ' / 解像度:' + video.videoWidth + 'x' + video.videoHeight +
+          ' / 試行:' + scanFrameCount +
+          (errText ? (' / エラー:' + errText) : '');
       }
+    }
+
+    if(rawValue){
+      handleQrResult(rawValue);
+      return;
     }
     requestAnimationFrame(tickScan);
   }
@@ -772,7 +798,7 @@
     const parts = raw.split(',').map(s=>s.trim());
     if(parts.length < 3 || parts[2]==='' || isNaN(Number(parts[2]))){
       showScanError('QRの内容を解釈できませんでした（注文番号,製作品番,数量 の形式が必要です）。読み取り直すか手入力をご利用ください。');
-      requestAnimationFrame(tickScan);
+      tickScan();
       return;
     }
     cancelScan();
