@@ -848,12 +848,34 @@
     beginWork({ orderNo: order, product: product, qty: Number(qty) });
   });
 
+  /* ============ バックグラウンド保存(リトライ付き) ============ */
+  function persistInBackground(key, record, opts){
+    opts = opts || {};
+    const maxAttempts = 4;
+    let attempt = 0;
+    function tryOnce(){
+      attempt++;
+      gasSet(key, record).then(()=>{
+        if(opts.onSuccess) opts.onSuccess();
+      }).catch((e)=>{
+        console.error('persist attempt ' + attempt + ' failed', key, e);
+        if(attempt < maxAttempts){
+          setTimeout(tryOnce, attempt * 1500);
+        } else {
+          toast('通信エラーのため「' + (record.product||'') + '」の記録が保存できていません。電波状況をご確認ください。');
+          if(opts.onGiveUp) opts.onGiveUp();
+        }
+      });
+    }
+    tryOnce();
+  }
+
   /* ============ 作業開始(QR/手入力 共通) ============ */
   // activeJobs: { [key]: { record, pauseState:{paused,pauseStartedAt,pauseCount,pausedMinutes} } }
   let activeJobs = {};
   let jobsTimerInterval = null;
 
-  async function beginWork(lot){
+  function beginWork(lot){
     const worker = $('f-worker').value.trim();
     rememberWorker(worker);
     const now = new Date();
@@ -875,24 +897,20 @@
     };
     const key = 'record:' + Date.now() + '-' + Math.random().toString(36).slice(2,8);
 
-    try{
-      await gasSet(key, record);
-      activeJobs[key] = { record, pauseState: { paused:false, pauseStartedAt:null, pauseCount:0, pausedMinutes:0 } };
-      showStamp('開始受付');
-      renderActiveJobsList();
-      setStage('working');
-      startJobsTimer();
-    }catch(e){
-      const detail = (e && (e.message || e.toString)) ? (e.message || e.toString()) : String(e);
-      toast('登録中にエラーが発生しました：' + detail);
-      console.error('beginWork error', e);
-      setStage(Object.keys(activeJobs).length ? 'working' : 'idle');
-    }
+    // 先に画面を切り替え、保存は裏側で行う(体感ラグをなくすため)
+    activeJobs[key] = { record, pauseState: { paused:false, pauseStartedAt:null, pauseCount:0, pausedMinutes:0 } };
+    showStamp('開始受付');
+    renderActiveJobsList();
+    setStage('working');
+    startJobsTimer();
+
+    persistInBackground(key, record);
   }
 
   $('btn-add-another').addEventListener('click', ()=>{
     setStage('idle');
   });
+
 
   function renderActiveJobsList(){
     const container = $('active-jobs-list');
@@ -997,7 +1015,7 @@
     $('finish-modal').hidden = true;
     finishingKey = null;
   });
-  $('finish-confirm').addEventListener('click', async ()=>{
+  $('finish-confirm').addEventListener('click', ()=>{
     const key = finishingKey;
     const job = activeJobs[key];
     if(!job) return;
@@ -1019,27 +1037,21 @@
     r.status = 'completed';
     r.savedAt = now.toISOString();
 
-    $('finish-confirm').disabled = true;
-    $('finish-confirm').textContent = '記録中…';
-    try{
-      await gasSet(key, r);
-      showStamp('作業終了');
-      toast('「' + r.product + '」の記録を保存しました。');
-      delete activeJobs[key];
-      $('finish-modal').hidden = true;
-      finishingKey = null;
-      renderActiveJobsList();
-      stopJobsTimerIfEmpty();
-      if(Object.keys(activeJobs).length === 0){
-        setStage('idle');
-      }
-    }catch(e){
-      toast('保存に失敗しました：' + (e && e.message ? e.message : e));
-    }finally{
-      $('finish-confirm').disabled = false;
-      $('finish-confirm').textContent = 'この内容で作業終了する';
+    // 先に画面を更新し、保存は裏側で行う(体感ラグをなくすため)
+    showStamp('作業終了');
+    toast('「' + r.product + '」の記録を保存しました。');
+    delete activeJobs[key];
+    $('finish-modal').hidden = true;
+    finishingKey = null;
+    renderActiveJobsList();
+    stopJobsTimerIfEmpty();
+    if(Object.keys(activeJobs).length === 0){
+      setStage('idle');
     }
+
+    persistInBackground(key, r);
   });
+
 
   /* ============ 一覧 ============ */
   let lastFetchedRecords = [];
