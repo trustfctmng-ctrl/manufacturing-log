@@ -1,0 +1,1057 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>製造記録アプリ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Noto+Sans+JP:wght@400;500;700;900&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsqr/1.4.0/jsQR.js"></script>
+<style>
+  :root{
+    --ink:#1F2A37;
+    --ink-soft:#4B5768;
+    --paper:#F4F5F1;
+    --card:#FFFFFF;
+    --line:#DDE1DA;
+    --amber:#F0A93B;
+    --amber-dark:#C97F16;
+    --steel:#3E6A8C;
+    --danger:#B5432F;
+    --stamp:#B5432F;
+    --ok:#3E7A4C;
+    --pause:#8A6D3B;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'Noto Sans JP',sans-serif;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .app{
+    max-width:480px;
+    margin:0 auto;
+    min-height:100vh;
+    display:flex;
+    flex-direction:column;
+    background:var(--paper);
+    position:relative;
+  }
+  .app-header{
+    background:var(--ink);
+    color:#fff;
+    padding:18px 18px 16px;
+    position:relative;
+    overflow:hidden;
+  }
+  .app-header::after{
+    content:"";
+    position:absolute;
+    right:-30px; top:-30px;
+    width:120px;height:120px;
+    border:10px solid rgba(240,169,59,0.15);
+    border-radius:50%;
+  }
+  .app-header .eyebrow{
+    font-family:'Oswald',sans-serif;
+    font-size:11px;
+    letter-spacing:0.18em;
+    color:var(--amber);
+    text-transform:uppercase;
+  }
+  .app-header h1{
+    margin:2px 0 0;
+    font-size:22px;
+    font-weight:900;
+    letter-spacing:0.02em;
+  }
+  .app-header .sub{
+    margin-top:6px;
+    font-size:12.5px;
+    color:#C9D0D8;
+  }
+  main{
+    flex:1;
+    padding:18px 16px 96px;
+  }
+  [hidden]{display:none !important;}
+
+  .card{
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:16px;
+    margin-bottom:14px;
+    position:relative;
+  }
+  .field{margin-bottom:14px;}
+  .field:last-child{margin-bottom:0;}
+  label{
+    display:block;
+    font-size:12.5px;
+    font-weight:700;
+    color:var(--ink-soft);
+    margin-bottom:6px;
+    letter-spacing:0.02em;
+  }
+  label .req{color:var(--danger); margin-left:2px;}
+  label .opt{color:var(--ink-soft); font-weight:400; margin-left:4px; font-size:11px;}
+  input[type=text], input[type=date], input[type=number], textarea{
+    width:100%;
+    font-family:'Noto Sans JP',sans-serif;
+    font-size:16px;
+    padding:11px 12px;
+    border:1.5px solid var(--line);
+    border-radius:8px;
+    background:#FCFCFB;
+    color:var(--ink);
+  }
+  input:focus, textarea:focus, button:focus-visible{
+    outline:2.5px solid var(--steel);
+    outline-offset:1px;
+    border-color:var(--steel);
+  }
+  textarea{resize:vertical; min-height:56px;}
+  .row2{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+  .row3{display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px;}
+
+  .btn-primary{
+    width:100%;
+    padding:16px;
+    background:var(--amber);
+    color:#2A1D07;
+    border:none;
+    border-radius:9px;
+    font-size:17px;
+    font-weight:700;
+    font-family:'Noto Sans JP',sans-serif;
+    letter-spacing:0.02em;
+  }
+  .btn-primary:active{background:var(--amber-dark);}
+  .btn-primary:disabled{opacity:0.5;}
+  .btn-danger{
+    width:100%;
+    padding:16px;
+    background:var(--danger);
+    color:#fff;
+    border:none;
+    border-radius:9px;
+    font-size:17px;
+    font-weight:700;
+    font-family:'Noto Sans JP',sans-serif;
+  }
+  .btn-pause{
+    width:100%;
+    padding:16px;
+    background:#fff;
+    color:var(--pause);
+    border:2px solid var(--pause);
+    border-radius:9px;
+    font-size:17px;
+    font-weight:700;
+    font-family:'Noto Sans JP',sans-serif;
+  }
+  .btn-pause.is-paused{
+    background:var(--pause);
+    color:#fff;
+  }
+  .btn-secondary{
+    width:100%;
+    padding:13px;
+    background:#fff;
+    color:var(--steel);
+    border:1.5px solid var(--steel);
+    border-radius:9px;
+    font-size:15px;
+    font-weight:700;
+    font-family:'Noto Sans JP',sans-serif;
+  }
+  .btn-ghost{
+    display:block;
+    width:100%;
+    text-align:center;
+    background:none;border:none;color:var(--ink-soft);
+    font-size:13px; text-decoration:underline; padding:10px;
+  }
+  .btn-stack > *{margin-bottom:10px;}
+  .btn-stack > *:last-child{margin-bottom:0;}
+
+  .stamp-overlay{
+    position:fixed; inset:0;
+    background:rgba(31,42,55,0.35);
+    display:flex; align-items:center; justify-content:center;
+    z-index:50;
+  }
+  .stamp{
+    font-family:'Oswald',sans-serif;
+    font-size:24px;
+    font-weight:700;
+    color:#fff;
+    background:var(--stamp);
+    border:4px solid #fff;
+    border-radius:50%;
+    width:120px;height:120px;
+    display:flex;align-items:center;justify-content:center;
+    transform:rotate(-14deg) scale(0.4);
+    opacity:0;
+    letter-spacing:0.05em;
+    text-align:center;
+    line-height:1.2;
+  }
+  @media (prefers-reduced-motion: no-preference){
+    .stamp.show{ animation:stampIn 0.38s cubic-bezier(.2,1.4,.4,1) forwards; }
+  }
+  @media (prefers-reduced-motion: reduce){
+    .stamp.show{opacity:1; transform:rotate(-14deg) scale(1);}
+  }
+  @keyframes stampIn{
+    0%{transform:rotate(-14deg) scale(0.3); opacity:0;}
+    60%{transform:rotate(-14deg) scale(1.08); opacity:1;}
+    100%{transform:rotate(-14deg) scale(1); opacity:1;}
+  }
+
+  .section-title{
+    font-family:'Oswald',sans-serif;
+    font-size:13px;
+    letter-spacing:0.14em;
+    text-transform:uppercase;
+    color:var(--ink-soft);
+    margin:0 0 10px 2px;
+  }
+
+  /* ---- idle stage ---- */
+  .idle-hero{
+    text-align:center;
+    padding:26px 10px 10px;
+  }
+  .idle-hero .ic{font-size:52px;}
+  .idle-hero p{color:var(--ink-soft); font-size:13.5px; margin:6px 0 0;}
+
+  /* ---- scan stage ---- */
+  .scan-wrap{
+    position:relative;
+    width:100%;
+    aspect-ratio:3/4;
+    background:#0d1117;
+    border-radius:12px;
+    overflow:hidden;
+    margin-bottom:14px;
+  }
+  .scan-wrap video{
+    width:100%; height:100%; object-fit:cover;
+  }
+  .scan-frame{
+    position:absolute; inset:14% 10%;
+    border:3px solid var(--amber);
+    border-radius:14px;
+    box-shadow:0 0 0 999px rgba(0,0,0,0.35);
+  }
+  .scan-hint{
+    position:absolute; bottom:12px; left:0; right:0;
+    text-align:center; color:#fff; font-size:12.5px;
+    text-shadow:0 1px 3px rgba(0,0,0,0.6);
+  }
+  .scan-error{
+    background:#F6E5E1; color:var(--danger);
+    border-radius:8px; padding:12px 14px; font-size:13px;
+    margin-bottom:14px; line-height:1.6;
+  }
+
+  /* ---- working stage ---- */
+  .lot-card{
+    background:var(--ink); color:#fff;
+    border-radius:12px; padding:16px 18px;
+    margin-bottom:14px;
+  }
+  .lot-card .badge{
+    display:inline-block;
+    font-family:'Oswald',sans-serif;
+    font-size:11px; letter-spacing:0.12em;
+    background:var(--amber); color:#2A1D07;
+    padding:3px 9px; border-radius:20px;
+    margin-bottom:8px;
+  }
+  .lot-card .badge.paused{background:var(--pause); color:#fff;}
+  .lot-card .product{font-size:19px; font-weight:700;}
+  .lot-card .grid{
+    display:grid; grid-template-columns:1fr 1fr;
+    gap:8px 14px; margin-top:12px;
+    font-size:13px; color:#C9D0D8;
+  }
+  .lot-card .grid b{display:block; color:#fff; font-size:15px; font-weight:700;}
+  .timer{
+    font-family:'Oswald',sans-serif;
+    font-size:34px; font-weight:600;
+    text-align:center; margin-top:14px;
+    letter-spacing:0.04em;
+  }
+
+  .rec-card{
+    background:var(--card);
+    border:1px solid var(--line);
+    border-left:5px solid var(--steel);
+    border-radius:8px;
+    padding:12px 14px;
+    margin-bottom:10px;
+  }
+  .rec-card.defect{border-left-color:var(--danger);}
+  .rec-card.in_progress{border-left-color:var(--amber-dark);}
+  .rec-top{display:flex; justify-content:space-between; gap:10px;}
+  .rec-main{font-size:14px; line-height:1.55;}
+  .rec-main .top-line{font-weight:700; font-size:15px;}
+  .rec-main .meta{color:var(--ink-soft); font-size:12.5px;}
+  .rec-num{font-family:'Oswald',sans-serif; text-align:right; white-space:nowrap;}
+  .rec-num .qty{font-size:20px; font-weight:700;}
+  .rec-num .qty-label{font-size:10.5px; color:var(--ink-soft);}
+  .rec-num .defect-badge{
+    display:inline-block; margin-top:4px;
+    font-size:11px; font-weight:700;
+    background:#F6E5E1; color:var(--danger);
+    padding:2px 7px; border-radius:20px;
+  }
+  .rec-num .status-badge{
+    display:inline-block; margin-top:4px;
+    font-size:11px; font-weight:700;
+    background:#FCEFD9; color:var(--amber-dark);
+    padding:2px 7px; border-radius:20px;
+  }
+  .rec-actions{display:flex; gap:12px; margin-top:8px; justify-content:flex-end;}
+  .rec-actions button{
+    background:none;border:none;color:var(--steel);
+    font-size:12.5px; font-weight:700; text-decoration:underline; padding:2px;
+  }
+  .rec-actions button.del{color:var(--danger);}
+
+  .empty{ text-align:center; color:var(--ink-soft); padding:40px 10px; font-size:13.5px; }
+  .empty .big{font-size:34px; display:block; margin-bottom:8px;}
+
+  .count-pill{
+    display:inline-block;
+    background:#EAF0F4; color:var(--steel);
+    font-family:'Oswald',sans-serif;
+    font-size:12.5px; font-weight:600;
+    padding:4px 10px; border-radius:20px;
+    margin-bottom:12px;
+  }
+
+  .tabbar{
+    position:fixed; bottom:0; left:0; right:0;
+    max-width:480px; margin:0 auto;
+    background:#fff; border-top:1px solid var(--line);
+    display:flex;
+  }
+  .tabbar button{
+    flex:1; background:none; border:none;
+    padding:11px 4px 9px;
+    font-family:'Noto Sans JP',sans-serif;
+    font-size:11.5px; color:var(--ink-soft);
+    display:flex; flex-direction:column; align-items:center; gap:3px;
+  }
+  .tabbar button .ic{font-size:19px;}
+  .tabbar button.active{color:var(--amber-dark); font-weight:700;}
+  .tabbar button.active .ic{color:var(--amber-dark);}
+
+  .modal-overlay{
+    position:fixed; inset:0; background:rgba(31,42,55,0.5);
+    display:flex; align-items:flex-end; justify-content:center;
+    z-index:70;
+  }
+  .modal-sheet{
+    background:#fff; width:100%; max-width:480px;
+    border-radius:16px 16px 0 0; padding:18px 16px 22px;
+  }
+  .modal-sheet h3{margin:0 0 14px; font-size:16px;}
+
+  .toast{
+    position:fixed; left:50%; bottom:78px; transform:translateX(-50%);
+    background:var(--ink); color:#fff;
+    padding:10px 18px; border-radius:20px;
+    font-size:13px; z-index:60;
+    opacity:0; transition:opacity 0.25s; max-width:88%; text-align:center;
+  }
+  .toast.show{opacity:1;}
+
+  .spinner{
+    width:16px; height:16px; border-radius:50%;
+    border:2.5px solid rgba(0,0,0,0.15);
+    border-top-color:var(--steel);
+    display:inline-block; animation:spin 0.7s linear infinite;
+    vertical-align:middle; margin-right:6px;
+  }
+  .spinner.on-dark{border-color:rgba(255,255,255,0.25); border-top-color:#fff;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  .helper{font-size:12px; color:var(--ink-soft); margin-top:6px; line-height:1.5;}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="app-header">
+    <div class="eyebrow">工程管理板 / Production Log</div>
+    <h1>製造記録アプリ</h1>
+    <div class="sub" id="header-date"></div>
+  </div>
+
+  <!-- ================= 入力タブ ================= -->
+  <main id="view-input">
+
+    <!-- 待機画面 -->
+    <div id="stage-idle">
+      <div class="card">
+        <div class="field">
+          <label>作業者名<span class="req">*</span></label>
+          <input type="text" id="f-worker" placeholder="例）山田 太郎" autocomplete="off">
+        </div>
+      </div>
+      <div class="idle-hero">
+        <span class="ic">📷</span>
+        <p>指示札のQRコードを読み取って作業を開始します</p>
+      </div>
+      <button class="btn-primary" id="btn-open-scan">QRを読み取って開始</button>
+      <button class="btn-ghost" id="btn-open-manual">QRが読めない場合は手入力する</button>
+      <div class="helper" id="idle-error"></div>
+    </div>
+
+    <!-- QRスキャン画面 -->
+    <div id="stage-scan" hidden>
+      <div class="scan-wrap">
+        <video id="qr-video" playsinline muted></video>
+        <div class="scan-frame"></div>
+        <div class="scan-hint" id="scan-hint">指示札のQRコードを枠内に写してください</div>
+      </div>
+      <div id="scan-error" class="scan-error" hidden></div>
+      <button class="btn-secondary" id="btn-cancel-scan">キャンセルして戻る</button>
+      <button class="btn-ghost" id="btn-scan-to-manual">読み取れない場合は手入力する</button>
+    </div>
+
+    <!-- 手入力画面 -->
+    <div id="stage-manual" hidden>
+      <div class="card">
+        <div class="field">
+          <label>注文番号<span class="req">*</span></label>
+          <input type="text" id="m-order" placeholder="例）Y4938024" autocomplete="off">
+        </div>
+        <div class="field">
+          <label>製作品番<span class="req">*</span></label>
+          <input type="text" id="m-product" placeholder="例）S209676223" autocomplete="off">
+        </div>
+        <div class="field">
+          <label>製作数量<span class="req">*</span></label>
+          <input type="number" id="m-qty" inputmode="numeric" min="0" placeholder="0">
+        </div>
+      </div>
+      <button class="btn-primary" id="btn-manual-start">この内容で作業開始</button>
+      <button class="btn-ghost" id="btn-manual-cancel">戻る</button>
+      <div class="helper" id="manual-error"></div>
+    </div>
+
+    <!-- 作業中画面 -->
+    <div id="stage-working" hidden>
+      <div class="lot-card">
+        <span class="badge" id="work-badge">作業中</span>
+        <div class="product" id="w-product">-</div>
+        <div class="grid">
+          <div>注文番号<b id="w-order">-</b></div>
+          <div>製作数量<b id="w-qty">-</b></div>
+          <div>作業者<b id="w-worker">-</b></div>
+          <div>開始時刻<b id="w-start">-</b></div>
+        </div>
+        <div class="timer" id="w-timer">00:00:00</div>
+      </div>
+
+      <div class="card">
+        <div class="row2">
+          <div class="field">
+            <label>実績数量<span class="opt">(任意)</span></label>
+            <input type="number" id="w-actual-qty" inputmode="numeric" min="0">
+          </div>
+          <div class="field">
+            <label>不良数<span class="opt">(任意)</span></label>
+            <input type="number" id="w-defect" inputmode="numeric" min="0" placeholder="0">
+          </div>
+        </div>
+        <div class="field">
+          <label>備考<span class="opt">(任意)</span></label>
+          <textarea id="w-note" placeholder="例）14時より段取り替え、設備異常なし"></textarea>
+        </div>
+      </div>
+
+      <div class="btn-stack">
+        <button class="btn-pause" id="btn-pause">中断</button>
+        <button class="btn-danger" id="btn-finish">作業終了</button>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ================= 一覧タブ ================= -->
+  <main id="view-list" hidden>
+    <div class="section-title">最近の記録</div>
+    <div id="list-status" class="helper"></div>
+    <div id="list-body"></div>
+  </main>
+
+  <!-- ================= CSV出力タブ ================= -->
+  <main id="view-export" hidden>
+    <div class="card">
+      <div class="section-title" style="margin-top:0">期間を指定してCSV出力</div>
+      <div class="row2">
+        <div class="field">
+          <label>開始日</label>
+          <input type="date" id="ex-from">
+        </div>
+        <div class="field">
+          <label>終了日</label>
+          <input type="date" id="ex-to">
+        </div>
+      </div>
+      <div class="field" style="margin-bottom:0">
+        <label>クイック選択</label>
+        <div class="row3">
+          <button class="btn-secondary" data-range="today" style="padding:9px; font-size:13px;">今日</button>
+          <button class="btn-secondary" data-range="week" style="padding:9px; font-size:13px;">直近7日</button>
+          <button class="btn-secondary" data-range="month" style="padding:9px; font-size:13px;">今月</button>
+        </div>
+      </div>
+    </div>
+    <button class="btn-primary" id="csv-btn">この期間のCSVをダウンロード</button>
+    <div class="helper" id="csv-status"></div>
+  </main>
+
+  <nav class="tabbar">
+    <button class="tab-btn active" data-tab="input"><span class="ic">✏️</span>入力</button>
+    <button class="tab-btn" data-tab="list"><span class="ic">📋</span>一覧</button>
+    <button class="tab-btn" data-tab="export"><span class="ic">📤</span>CSV出力</button>
+  </nav>
+
+  <div id="stamp-overlay" class="stamp-overlay" hidden>
+    <div class="stamp" id="stamp-el">登録済</div>
+  </div>
+  <div class="toast" id="toast"></div>
+
+  <!-- 編集モーダル(一覧タブから) -->
+  <div id="edit-modal" class="modal-overlay" hidden>
+    <div class="modal-sheet">
+      <h3>記録を編集</h3>
+      <div class="row2">
+        <div class="field">
+          <label>実績数量</label>
+          <input type="number" id="edit-actual-qty" min="0">
+        </div>
+        <div class="field">
+          <label>不良数</label>
+          <input type="number" id="edit-defect" min="0">
+        </div>
+      </div>
+      <div class="field">
+        <label>備考</label>
+        <textarea id="edit-note"></textarea>
+      </div>
+      <div class="btn-stack">
+        <button class="btn-primary" id="edit-save">保存する</button>
+        <button class="btn-ghost" id="edit-cancel">キャンセル</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  const $ = (id) => document.getElementById(id);
+  const todayStr = () => new Date().toISOString().slice(0,10);
+  const pad = (n) => String(n).padStart(2,'0');
+
+  $('header-date').textContent = new Date().toLocaleDateString('ja-JP',{year:'numeric',month:'long',day:'numeric',weekday:'short'});
+
+  /* ============ タブ切替 ============ */
+  const views = {input:$('view-input'), list:$('view-list'), export:$('view-export')};
+  document.querySelectorAll('.tab-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      if(btn.dataset.tab !== 'input' && currentStage === 'scan'){
+        cancelScan();
+      }
+      document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      Object.keys(views).forEach(k=>views[k].hidden = (k!==btn.dataset.tab));
+      if(btn.dataset.tab === 'list') loadList();
+    });
+  });
+
+  function toast(msg){
+    const t = $('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(()=>t.classList.remove('show'), 2200);
+  }
+
+  function showStamp(label){
+    const overlay = $('stamp-overlay');
+    const stamp = $('stamp-el');
+    stamp.textContent = label;
+    overlay.hidden = false;
+    stamp.classList.remove('show');
+    void stamp.offsetWidth;
+    stamp.classList.add('show');
+    setTimeout(()=>{ overlay.hidden = true; }, 750);
+  }
+
+  /* ============ 作業者名の記憶 ============ */
+  (async function initWorkerName(){
+    try{
+      const res = await window.storage.get('settings:worker-name', false);
+      if(res && res.value) $('f-worker').value = res.value;
+    }catch(e){ /* まだ保存なし */ }
+  })();
+  async function rememberWorker(name){
+    try{ await window.storage.set('settings:worker-name', name, false); }catch(e){}
+  }
+
+  /* ============ ステージ管理(入力タブ内の画面遷移) ============ */
+  const stages = {
+    idle: $('stage-idle'),
+    scan: $('stage-scan'),
+    manual: $('stage-manual'),
+    working: $('stage-working')
+  };
+  let currentStage = 'idle';
+  function setStage(name){
+    currentStage = name;
+    Object.keys(stages).forEach(k => stages[k].hidden = (k!==name));
+  }
+
+  $('btn-open-scan').addEventListener('click', ()=>{
+    $('idle-error').textContent = '';
+    if(!$('f-worker').value.trim()){
+      $('idle-error').textContent = '作業者名を入力してください。';
+      return;
+    }
+    startScan();
+  });
+  $('btn-open-manual').addEventListener('click', ()=>{
+    $('idle-error').textContent = '';
+    if(!$('f-worker').value.trim()){
+      $('idle-error').textContent = '作業者名を入力してください。';
+      return;
+    }
+    setStage('manual');
+  });
+  $('btn-manual-cancel').addEventListener('click', ()=> setStage('idle'));
+  $('btn-cancel-scan').addEventListener('click', ()=>{ cancelScan(); setStage('idle'); });
+  $('btn-scan-to-manual').addEventListener('click', ()=>{ cancelScan(); setStage('manual'); });
+
+  /* ============ QRスキャン ============ */
+  let scanStream = null;
+  let scanning = false;
+
+  async function startScan(){
+    setStage('scan');
+    $('scan-error').hidden = true;
+    const video = $('qr-video');
+    try{
+      scanStream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' } });
+      video.srcObject = scanStream;
+      await video.play();
+      scanning = true;
+      requestAnimationFrame(tickScan);
+    }catch(e){
+      showScanError('カメラを起動できませんでした。ブラウザのカメラ利用を許可するか、手入力をご利用ください。');
+    }
+  }
+
+  function showScanError(msg){
+    const el = $('scan-error');
+    el.textContent = msg;
+    el.hidden = false;
+  }
+
+  const scanCanvas = document.createElement('canvas');
+  function tickScan(){
+    if(!scanning) return;
+    const video = $('qr-video');
+    if(video.readyState === video.HAVE_ENOUGH_DATA){
+      scanCanvas.width = video.videoWidth;
+      scanCanvas.height = video.videoHeight;
+      const ctx = scanCanvas.getContext('2d', { willReadFrequently:true });
+      ctx.drawImage(video, 0, 0, scanCanvas.width, scanCanvas.height);
+      const imageData = ctx.getImageData(0, 0, scanCanvas.width, scanCanvas.height);
+      let code = null;
+      try{ code = window.jsQR ? jsQR(imageData.data, imageData.width, imageData.height) : null; }
+      catch(e){ code = null; }
+      if(code && code.data){
+        handleQrResult(code.data);
+        return;
+      }
+    }
+    requestAnimationFrame(tickScan);
+  }
+
+  function cancelScan(){
+    scanning = false;
+    if(scanStream){
+      scanStream.getTracks().forEach(t=>t.stop());
+      scanStream = null;
+    }
+  }
+
+  function handleQrResult(raw){
+    const parts = raw.split(',').map(s=>s.trim());
+    if(parts.length < 3 || parts[2]==='' || isNaN(Number(parts[2]))){
+      showScanError('QRの内容を解釈できませんでした（注文番号,製作品番,数量 の形式が必要です）。読み取り直すか手入力をご利用ください。');
+      requestAnimationFrame(tickScan);
+      return;
+    }
+    cancelScan();
+    beginWork({ orderNo: parts[0], product: parts[1], qty: Number(parts[2]) });
+  }
+
+  /* ============ 手入力での開始 ============ */
+  $('btn-manual-start').addEventListener('click', ()=>{
+    const order = $('m-order').value.trim();
+    const product = $('m-product').value.trim();
+    const qty = $('m-qty').value;
+    const err = $('manual-error');
+    err.textContent = '';
+    if(!order || !product || qty===''){
+      err.textContent = '注文番号・製作品番・製作数量は必須です。';
+      return;
+    }
+    beginWork({ orderNo: order, product: product, qty: Number(qty) });
+  });
+
+  /* ============ 作業開始(QR/手入力 共通) ============ */
+  let activeKey = null;
+  let activeRecord = null;
+  let pauseState = { paused:false, pauseStartedAt:null, pauseCount:0, pausedMinutes:0 };
+  let timerInterval = null;
+
+  async function beginWork(lot){
+    const worker = $('f-worker').value.trim();
+    await rememberWorker(worker);
+    const now = new Date();
+    activeRecord = {
+      date: now.toISOString().slice(0,10),
+      worker: worker,
+      orderNo: lot.orderNo,
+      product: lot.product,
+      plannedQty: lot.qty,
+      actualQty: lot.qty,
+      defect: 0,
+      note: '',
+      startTime: now.toISOString(),
+      endTime: null,
+      pauseCount: 0,
+      pausedMinutes: 0,
+      status: 'in_progress',
+      savedAt: now.toISOString()
+    };
+    activeKey = 'record:' + Date.now() + '-' + Math.random().toString(36).slice(2,8);
+    pauseState = { paused:false, pauseStartedAt:null, pauseCount:0, pausedMinutes:0 };
+
+    try{
+      const result = await window.storage.set(activeKey, JSON.stringify(activeRecord), true);
+      if(!result){
+        toast('記録の登録に失敗しました。もう一度お試しください。');
+        activeKey = null; activeRecord = null;
+        setStage('idle');
+        return;
+      }
+      showStamp('開始受付');
+      renderWorking();
+      setStage('working');
+      startTimer();
+    }catch(e){
+      toast('登録中にエラーが発生しました。');
+      setStage('idle');
+    }
+  }
+
+  function renderWorking(){
+    $('w-product').textContent = activeRecord.product;
+    $('w-order').textContent = activeRecord.orderNo;
+    $('w-qty').textContent = activeRecord.plannedQty;
+    $('w-worker').textContent = activeRecord.worker;
+    $('w-start').textContent = new Date(activeRecord.startTime).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'});
+    $('w-actual-qty').value = activeRecord.actualQty;
+    $('w-defect').value = activeRecord.defect;
+    $('w-note').value = activeRecord.note;
+    $('btn-pause').textContent = '中断';
+    $('btn-pause').classList.remove('is-paused');
+    $('work-badge').textContent = '作業中';
+    $('work-badge').classList.remove('paused');
+  }
+
+  function startTimer(){
+    stopTimer();
+    updateTimerDisplay();
+    timerInterval = setInterval(updateTimerDisplay, 1000);
+  }
+  function stopTimer(){
+    if(timerInterval){ clearInterval(timerInterval); timerInterval = null; }
+  }
+  function updateTimerDisplay(){
+    if(!activeRecord) return;
+    const start = new Date(activeRecord.startTime).getTime();
+    const now = pauseState.paused ? new Date(pauseState.pauseStartedAt).getTime() : Date.now();
+    let elapsedMs = now - start - pauseState.pausedMinutes*60000;
+    if(elapsedMs < 0) elapsedMs = 0;
+    const totalSec = Math.floor(elapsedMs/1000);
+    const h = Math.floor(totalSec/3600);
+    const m = Math.floor((totalSec%3600)/60);
+    const s = totalSec%60;
+    $('w-timer').textContent = pad(h)+':'+pad(m)+':'+pad(s);
+  }
+
+  /* ============ 中断 / 再開 ============ */
+  $('btn-pause').addEventListener('click', ()=>{
+    if(!pauseState.paused){
+      pauseState.paused = true;
+      pauseState.pauseStartedAt = new Date().toISOString();
+      $('btn-pause').textContent = '再開';
+      $('btn-pause').classList.add('is-paused');
+      $('work-badge').textContent = '中断中';
+      $('work-badge').classList.add('paused');
+    } else {
+      const pausedMs = Date.now() - new Date(pauseState.pauseStartedAt).getTime();
+      pauseState.pausedMinutes += pausedMs/60000;
+      pauseState.pauseCount += 1;
+      pauseState.paused = false;
+      pauseState.pauseStartedAt = null;
+      $('btn-pause').textContent = '中断';
+      $('btn-pause').classList.remove('is-paused');
+      $('work-badge').textContent = '作業中';
+      $('work-badge').classList.remove('paused');
+    }
+    updateTimerDisplay();
+  });
+
+  /* ============ 作業終了 ============ */
+  $('btn-finish').addEventListener('click', async ()=>{
+    if(!activeRecord || !activeKey) return;
+    if(pauseState.paused){
+      const pausedMs = Date.now() - new Date(pauseState.pauseStartedAt).getTime();
+      pauseState.pausedMinutes += pausedMs/60000;
+      pauseState.pauseCount += 1;
+      pauseState.paused = false;
+    }
+    const now = new Date();
+    activeRecord.endTime = now.toISOString();
+    activeRecord.actualQty = $('w-actual-qty').value !== '' ? Number($('w-actual-qty').value) : activeRecord.plannedQty;
+    activeRecord.defect = $('w-defect').value !== '' ? Number($('w-defect').value) : 0;
+    activeRecord.note = $('w-note').value.trim();
+    activeRecord.pauseCount = pauseState.pauseCount;
+    activeRecord.pausedMinutes = Math.round(pauseState.pausedMinutes*10)/10;
+    activeRecord.status = 'completed';
+    activeRecord.savedAt = now.toISOString();
+
+    $('btn-finish').disabled = true;
+    $('btn-finish').textContent = '記録中…';
+    try{
+      await window.storage.set(activeKey, JSON.stringify(activeRecord), true);
+      stopTimer();
+      showStamp('作業終了');
+      toast('お疲れ様でした。作業記録を保存しました。');
+    }catch(e){
+      toast('保存に失敗しました。一覧タブで記録をご確認ください。');
+    }finally{
+      $('btn-finish').disabled = false;
+      $('btn-finish').textContent = '作業終了';
+      activeKey = null; activeRecord = null;
+      setStage('idle');
+    }
+  });
+
+  /* ============ 一覧 ============ */
+  async function fetchAllRecords(){
+    const listRes = await window.storage.list('record:', true);
+    const keys = (listRes && listRes.keys) ? listRes.keys : [];
+    const records = [];
+    for(const key of keys){
+      try{
+        const r = await window.storage.get(key, true);
+        if(r && r.value){
+          const parsed = JSON.parse(r.value);
+          parsed._key = key;
+          records.push(parsed);
+        }
+      }catch(e){ /* 破損データはスキップ */ }
+    }
+    records.sort((a,b)=> (b.savedAt||'').localeCompare(a.savedAt||''));
+    return records;
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+  function fmtTime(iso){
+    if(!iso) return '-';
+    return new Date(iso).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'});
+  }
+
+  let editingKey = null;
+  let editingRecord = null;
+
+  async function loadList(){
+    const status = $('list-status');
+    const body = $('list-body');
+    status.innerHTML = '<span class="spinner"></span>読み込み中…';
+    body.innerHTML = '';
+    try{
+      const records = await fetchAllRecords();
+      status.textContent = '';
+      if(records.length === 0){
+        body.innerHTML = '<div class="empty"><span class="big">🗂️</span>まだ記録がありません。<br>「入力」タブから作業を開始しましょう。</div>';
+        return;
+      }
+      const shown = records.slice(0, 50);
+      body.innerHTML = '<div class="count-pill">全 ' + records.length + ' 件中 ' + shown.length + ' 件を表示</div>';
+      shown.forEach(rec=>{
+        const div = document.createElement('div');
+        div.className = 'rec-card' + (rec.defect>0 ? ' defect' : '') + (rec.status==='in_progress' ? ' in_progress' : '');
+        div.innerHTML =
+          '<div class="rec-top">' +
+            '<div class="rec-main">' +
+              '<div class="top-line">' + escapeHtml(rec.product||'') + '</div>' +
+              '<div class="meta">' + escapeHtml(rec.date||'') + ' ・ ' + escapeHtml(rec.worker||'') +
+                (rec.orderNo ? (' ・ 注文 ' + escapeHtml(rec.orderNo)) : '') + '</div>' +
+              '<div class="meta">開始 ' + fmtTime(rec.startTime) + ' 〜 終了 ' + fmtTime(rec.endTime) +
+                (rec.pauseCount ? ('（中断 ' + rec.pauseCount + '回 / ' + Math.round(rec.pausedMinutes) + '分）') : '') + '</div>' +
+              (rec.note ? '<div class="meta">' + escapeHtml(rec.note) + '</div>' : '') +
+            '</div>' +
+            '<div class="rec-num">' +
+              '<span class="qty">' + (rec.actualQty ?? rec.plannedQty ?? '-') + '</span><div class="qty-label">実績数量</div>' +
+              (rec.defect>0 ? '<div class="defect-badge">不良 ' + rec.defect + '</div>' : '') +
+              (rec.status==='in_progress' ? '<div class="status-badge">作業中</div>' : '') +
+            '</div>' +
+          '</div>' +
+          '<div class="rec-actions">' +
+            '<button class="edit" data-key="' + rec._key + '">編集</button>' +
+            '<button class="del" data-key="' + rec._key + '">削除</button>' +
+          '</div>';
+        body.appendChild(div);
+      });
+      body.querySelectorAll('.del').forEach(btn=>{
+        btn.addEventListener('click', async ()=>{
+          if(!confirm('この記録を削除しますか？')) return;
+          try{
+            await window.storage.delete(btn.dataset.key, true);
+            toast('削除しました');
+            loadList();
+          }catch(e){ toast('削除に失敗しました'); }
+        });
+      });
+      body.querySelectorAll('.edit').forEach(btn=>{
+        btn.addEventListener('click', async ()=>{
+          try{
+            const r = await window.storage.get(btn.dataset.key, true);
+            if(!r || !r.value) return;
+            editingKey = btn.dataset.key;
+            editingRecord = JSON.parse(r.value);
+            $('edit-actual-qty').value = editingRecord.actualQty ?? editingRecord.plannedQty ?? '';
+            $('edit-defect').value = editingRecord.defect ?? 0;
+            $('edit-note').value = editingRecord.note ?? '';
+            $('edit-modal').hidden = false;
+          }catch(e){ toast('読み込みに失敗しました'); }
+        });
+      });
+    }catch(e){
+      status.textContent = '読み込みに失敗しました。電波状況を確認し、再度お試しください。';
+    }
+  }
+
+  $('edit-cancel').addEventListener('click', ()=>{ $('edit-modal').hidden = true; editingKey=null; editingRecord=null; });
+  $('edit-save').addEventListener('click', async ()=>{
+    if(!editingKey || !editingRecord) return;
+    editingRecord.actualQty = $('edit-actual-qty').value !== '' ? Number($('edit-actual-qty').value) : editingRecord.actualQty;
+    editingRecord.defect = $('edit-defect').value !== '' ? Number($('edit-defect').value) : 0;
+    editingRecord.note = $('edit-note').value.trim();
+    try{
+      await window.storage.set(editingKey, JSON.stringify(editingRecord), true);
+      $('edit-modal').hidden = true;
+      toast('更新しました');
+      loadList();
+    }catch(e){ toast('更新に失敗しました'); }
+    editingKey = null; editingRecord = null;
+  });
+
+  /* ============ CSV出力 ============ */
+  $('ex-to').value = todayStr();
+  const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate()-6);
+  $('ex-from').value = weekAgo.toISOString().slice(0,10);
+
+  document.querySelectorAll('[data-range]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const now = new Date();
+      if(btn.dataset.range==='today'){
+        $('ex-from').value = todayStr();
+        $('ex-to').value = todayStr();
+      } else if(btn.dataset.range==='week'){
+        const from = new Date(); from.setDate(now.getDate()-6);
+        $('ex-from').value = from.toISOString().slice(0,10);
+        $('ex-to').value = todayStr();
+      } else if(btn.dataset.range==='month'){
+        const from = new Date(now.getFullYear(), now.getMonth(), 1);
+        $('ex-from').value = from.toISOString().slice(0,10);
+        $('ex-to').value = todayStr();
+      }
+    });
+  });
+
+  $('csv-btn').addEventListener('click', async ()=>{
+    const from = $('ex-from').value;
+    const to = $('ex-to').value;
+    const status = $('csv-status');
+    if(!from || !to || from > to){
+      status.textContent = '開始日は終了日より前の日付にしてください。';
+      return;
+    }
+    status.innerHTML = '<span class="spinner"></span>集計中…';
+    $('csv-btn').disabled = true;
+    try{
+      const all = await fetchAllRecords();
+      const filtered = all.filter(r => r.date >= from && r.date <= to)
+                           .sort((a,b)=> (a.date+a.worker).localeCompare(b.date+b.worker));
+      if(filtered.length === 0){
+        status.textContent = '指定期間に該当する記録がありません。';
+        $('csv-btn').disabled = false;
+        return;
+      }
+      const header = ['日付','作業者名','注文番号','製作品番','計画数量','実績数量','不良数','開始時刻','終了時刻','中断回数','中断時間(分)','状態','備考'];
+      const rows = filtered.map(r => [
+        r.date, r.worker, r.orderNo||'', r.product||'', r.plannedQty ?? '', r.actualQty ?? '',
+        r.defect ?? 0, fmtTime(r.startTime), fmtTime(r.endTime),
+        r.pauseCount ?? 0, r.pausedMinutes ? Math.round(r.pausedMinutes) : 0,
+        r.status==='completed' ? '完了' : '作業中', r.note||''
+      ]);
+      const csvLines = [header, ...rows].map(row =>
+        row.map(cell => {
+          const s = String(cell ?? '');
+          return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
+        }).join(',')
+      );
+      const csvContent = '\uFEFF' + csvLines.join('\r\n');
+      const blob = new Blob([csvContent], {type:'text/csv;charset=utf-8;'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = '製造記録_' + from + '_' + to + '.csv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      status.textContent = filtered.length + ' 件のCSVをダウンロードしました。';
+    }catch(e){
+      status.textContent = 'CSV作成に失敗しました：' + (e && e.message ? e.message : e);
+    }finally{
+      $('csv-btn').disabled = false;
+    }
+  });
+
+  setStage('idle');
+})();
+</script>
+</body>
+</html>
