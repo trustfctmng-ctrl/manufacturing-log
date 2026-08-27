@@ -422,6 +422,7 @@
         <div class="scan-frame"></div>
         <div class="scan-hint" id="scan-hint">指示札のQRコードを枠内に写してください</div>
       </div>
+      <div id="scan-debug" class="helper" style="text-align:center;"></div>
       <div id="scan-error" class="scan-error" hidden></div>
       <button class="btn-secondary" id="btn-cancel-scan">キャンセルして戻る</button>
       <button class="btn-ghost" id="btn-scan-to-manual">読み取れない場合は手入力する</button>
@@ -676,6 +677,9 @@
   async function startScan(){
     setStage('scan');
     $('scan-error').hidden = true;
+    scanFrameCount = 0;
+    const dbgEl = $('scan-debug');
+    if(dbgEl) dbgEl.textContent = '';
     const video = $('qr-video');
     try{
       scanStream = await navigator.mediaDevices.getUserMedia({
@@ -708,6 +712,7 @@
   }
 
   const scanCanvas = document.createElement('canvas');
+  let scanFrameCount = 0;
   function tickScan(){
     if(!scanning) return;
     const video = $('qr-video');
@@ -718,8 +723,19 @@
       ctx.drawImage(video, 0, 0, scanCanvas.width, scanCanvas.height);
       const imageData = ctx.getImageData(0, 0, scanCanvas.width, scanCanvas.height);
       let code = null;
+      let jsqrError = '';
       try{ code = window.jsQR ? jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'attemptBoth' }) : null; }
-      catch(e){ code = null; }
+      catch(e){ code = null; jsqrError = (e && e.message) ? e.message : String(e); }
+      scanFrameCount++;
+      if(scanFrameCount % 10 === 0){
+        const dbg = $('scan-debug');
+        if(dbg){
+          dbg.textContent = 'jsQR:' + (window.jsQR ? 'OK' : '未読込') +
+            ' / 解像度:' + scanCanvas.width + 'x' + scanCanvas.height +
+            ' / 試行:' + scanFrameCount +
+            (jsqrError ? (' / エラー:' + jsqrError) : '');
+        }
+      }
       if(code && code.data){
         handleQrResult(code.data);
         return;
