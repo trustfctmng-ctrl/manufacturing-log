@@ -191,6 +191,18 @@
     background:none;border:none;color:var(--ink-soft);
     font-size:13px; text-decoration:underline; padding:10px;
   }
+  .btn-day-end{
+    width:100%;
+    padding:14px;
+    background:var(--ink);
+    color:#fff;
+    border:1.5px solid var(--ink);
+    border-radius:9px;
+    font-size:15px;
+    font-weight:700;
+    font-family:'Noto Sans JP',sans-serif;
+  }
+  .btn-day-end:active{ background:#111a24; }
   .btn-stack > *{margin-bottom:10px;}
   .btn-stack > *:last-child{margin-bottom:0;}
 
@@ -500,7 +512,7 @@
     <!-- 進行中ロット一覧画面(複数同時進行対応) -->
     <div id="stage-working" hidden>
       <button class="btn-secondary" id="btn-add-another" style="margin-bottom:10px;">＋ 別のロットを開始する</button>
-      <button class="btn-ghost" id="btn-end-of-day" style="margin-bottom:14px;">本日の業務を終了する（全ロット一時中断）</button>
+      <button class="btn-day-end" id="btn-end-of-day" style="margin-bottom:14px;">🌙 本日の業務を終了する（全ロット一時中断）</button>
       <div id="active-jobs-list"></div>
     </div>
 
