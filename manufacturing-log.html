@@ -967,7 +967,11 @@
   }
 
   $('btn-add-another').addEventListener('click', ()=>{
-    setStage('idle');
+    if(!$('f-worker').value.trim()){
+      setStage('idle');
+      return;
+    }
+    startScan();
   });
 
   /* ============ 本日の業務終了 / 翌日の一括再開 ============ */
