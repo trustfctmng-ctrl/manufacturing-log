@@ -320,9 +320,21 @@
     background:var(--ink); color:#fff;
     border-radius:12px; padding:14px 16px;
     margin-bottom:12px;
+    position:relative;
   }
+  .job-cancel-x{
+    position:absolute; top:10px; right:10px;
+    width:34px; height:34px;
+    background:rgba(255,255,255,0.12);
+    border:1.5px solid rgba(255,255,255,0.35);
+    border-radius:50%;
+    color:#fff; font-size:16px; font-weight:700;
+    line-height:1;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .job-cancel-x:active{ background:var(--danger); border-color:var(--danger); }
   .job-card .badge.paused{background:var(--pause); color:#fff;}
-  .job-card .top-row{display:flex; justify-content:space-between; align-items:flex-start; gap:10px;}
+  .job-card .top-row{display:flex; justify-content:space-between; align-items:flex-start; gap:10px; padding-right:36px;}
   .job-card .product{font-size:17px; font-weight:700;}
   .job-card .meta-line{font-size:12.5px; color:#C9D0D8; margin-top:4px;}
   .job-card .timer{
@@ -1075,6 +1087,7 @@
       div.className = 'job-card';
       div.dataset.key = key;
       div.innerHTML =
+        '<button class="job-cancel-x" data-role="cancel" title="このロットを取り消す">✕</button>' +
         '<div class="top-row">' +
           '<div>' +
             '<span class="badge' + (isPaused ? ' paused' : '') + '" data-role="badge">' + (isPaused ? '中断中' : '作業中') + '</span>' +
@@ -1092,7 +1105,27 @@
 
       div.querySelector('[data-role="pause"]').addEventListener('click', ()=> togglePauseJob(key));
       div.querySelector('[data-role="finish"]').addEventListener('click', ()=> openFinishModal(key));
+      div.querySelector('[data-role="cancel"]').addEventListener('click', ()=> cancelJob(key));
     });
+  }
+
+  async function cancelJob(key){
+    const job = activeJobs[key];
+    if(!job) return;
+    if(!confirm('「' + job.record.product + '」のロットを取り消しますか？\n記録は完全に削除され、元に戻せません。')) return;
+    delete activeJobs[key];
+    renderActiveJobsList();
+    stopJobsTimerIfEmpty();
+    if(Object.keys(activeJobs).length === 0){
+      setStage('idle');
+    }
+    toast('ロットを取り消しました。');
+    try{
+      await gasDelete(key);
+    }catch(e){
+      console.error('cancelJob delete failed', e);
+      toast('記録の削除に失敗しました。一覧タブから手動で削除してください。');
+    }
   }
 
   function togglePauseJob(key){
