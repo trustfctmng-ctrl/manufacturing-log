@@ -1384,6 +1384,21 @@
     });
   });
 
+  function countOverlaps(record, allRecords){
+    if(!record.startTime) return 1;
+    const start = new Date(record.startTime).getTime();
+    const end = record.endTime ? new Date(record.endTime).getTime() : Date.now();
+    let count = 0;
+    allRecords.forEach(r=>{
+      if(r.worker !== record.worker) return;
+      if(!r.startTime) return;
+      const s2 = new Date(r.startTime).getTime();
+      const e2 = r.endTime ? new Date(r.endTime).getTime() : Date.now();
+      if(s2 < end && e2 > start) count++;
+    });
+    return count || 1;
+  }
+
   $('csv-btn').addEventListener('click', async ()=>{
     const from = $('ex-from').value;
     const to = $('ex-to').value;
@@ -1403,14 +1418,19 @@
         $('csv-btn').disabled = false;
         return;
       }
-      const header = ['日付','作業者名','注文番号','製作品番','計画数量','実績数量','不良数','開始時刻','終了時刻','中断回数','中断時間(分)','実作業時間(分)','状態','備考'];
-      const rows = filtered.map(r => [
+      const header = ['日付','作業者名','注文番号','製作品番','計画数量','実績数量','不良数','開始時刻','終了時刻','中断回数','中断時間(分)','実作業時間(分)','同時進行件数','配分後目安時間(分)','状態','備考'];
+      const rows = filtered.map(r => {
+        const overlapCount = countOverlaps(r, all);
+        const allocated = (r.workMinutes !== undefined && r.workMinutes !== '') ? Math.round((Number(r.workMinutes) / overlapCount) * 10) / 10 : '';
+        return [
         r.date, r.worker, r.orderNo||'', r.product||'', r.plannedQty ?? '', r.actualQty ?? '',
         r.defect ?? 0, fmtTime(r.startTime), fmtTime(r.endTime),
         r.pauseCount ?? 0, r.pausedMinutes ? Math.round(r.pausedMinutes) : 0,
         r.workMinutes !== undefined && r.workMinutes !== '' ? Math.round(r.workMinutes) : '',
+        overlapCount, allocated,
         r.status==='completed' ? '完了' : '作業中', r.note||''
-      ]);
+        ];
+      });
       const csvLines = [header, ...rows].map(row =>
         row.map(cell => {
           const s = String(cell ?? '');
