@@ -546,6 +546,7 @@
         <label>備考</label>
         <textarea id="finish-note" placeholder="例）14時より段取り替え、設備異常なし"></textarea>
       </div>
+      <div id="finish-work-preview" class="helper" style="margin-bottom:14px;"></div>
       <div class="btn-stack">
         <button class="btn-danger" id="finish-confirm">この内容で作業終了する</button>
         <button class="btn-ghost" id="finish-cancel">キャンセル</button>
@@ -615,6 +616,10 @@
       <div class="field">
         <label>備考</label>
         <textarea id="edit-note"></textarea>
+      </div>
+      <div class="field">
+        <label>実作業時間(分)<span class="opt">(中断の押し忘れ等があれば手動修正)</span></label>
+        <input type="number" id="edit-work-minutes" min="0">
       </div>
       <div class="btn-stack">
         <button class="btn-primary" id="edit-save">保存する</button>
@@ -1142,6 +1147,13 @@
   }
 
   /* ============ 作業終了(確認モーダル経由) ============ */
+  function formatMinutesAsHM(mins){
+    const total = Math.max(0, Math.round(mins));
+    const h = Math.floor(total/60);
+    const m = total%60;
+    return (h>0 ? h+'時間' : '') + m+'分';
+  }
+
   let finishingKey = null;
   function openFinishModal(key){
     const job = activeJobs[key];
@@ -1151,6 +1163,20 @@
     $('finish-actual-qty').value = job.record.actualQty ?? job.record.plannedQty;
     $('finish-defect').value = job.record.defect ?? 0;
     $('finish-note').value = job.record.note ?? '';
+
+    const ps = job.pauseState;
+    const now = Date.now();
+    const pausedSoFar = ps.pausedMinutes + (ps.paused ? (now - new Date(ps.pauseStartedAt).getTime())/60000 : 0);
+    const totalMinutes = (now - new Date(job.record.startTime).getTime()) / 60000;
+    const workMinutes = Math.max(0, totalMinutes - pausedSoFar);
+    const preview = $('finish-work-preview');
+    if(workMinutes > 360){
+      preview.innerHTML = '<span style="color:var(--danger); font-weight:700;">実作業時間(概算): ' + formatMinutesAsHM(workMinutes) +
+        '　※かなり長時間です。中断の押し忘れがないか確認してください。</span>';
+    } else {
+      preview.textContent = '実作業時間(概算): ' + formatMinutesAsHM(workMinutes);
+    }
+
     $('finish-modal').hidden = false;
   }
   $('finish-cancel').addEventListener('click', ()=>{
@@ -1178,6 +1204,8 @@
     r.pausedMinutes = Math.round(ps.pausedMinutes*10)/10;
     r.status = 'completed';
     r.savedAt = now.toISOString();
+    const totalMinutes = (now.getTime() - new Date(r.startTime).getTime()) / 60000;
+    r.workMinutes = Math.max(0, Math.round((totalMinutes - r.pausedMinutes) * 10) / 10);
 
     // 先に画面を更新し、保存は裏側で行う(体感ラグをなくすため)
     showStamp('作業終了');
@@ -1240,7 +1268,8 @@
               '<div class="meta">' + escapeHtml(rec.date||'') + ' ・ ' + escapeHtml(rec.worker||'') +
                 (rec.orderNo ? (' ・ 注文 ' + escapeHtml(rec.orderNo)) : '') + '</div>' +
               '<div class="meta">開始 ' + fmtTime(rec.startTime) + ' 〜 終了 ' + fmtTime(rec.endTime) +
-                (rec.pauseCount ? ('（中断 ' + rec.pauseCount + '回 / ' + Math.round(rec.pausedMinutes) + '分）') : '') + '</div>' +
+                (rec.pauseCount ? ('（中断 ' + rec.pauseCount + '回 / ' + Math.round(rec.pausedMinutes) + '分）') : '') +
+                (rec.workMinutes !== undefined && rec.workMinutes !== '' ? (' ・ 実作業 ' + formatMinutesAsHM(Number(rec.workMinutes))) : '') + '</div>' +
               (rec.note ? '<div class="meta">' + escapeHtml(rec.note) + '</div>' : '') +
             '</div>' +
             '<div class="rec-num">' +
@@ -1274,6 +1303,7 @@
           $('edit-actual-qty').value = editingRecord.actualQty ?? editingRecord.plannedQty ?? '';
           $('edit-defect').value = editingRecord.defect ?? 0;
           $('edit-note').value = editingRecord.note ?? '';
+          $('edit-work-minutes').value = editingRecord.workMinutes ?? '';
           $('edit-modal').hidden = false;
         });
       });
@@ -1288,6 +1318,7 @@
     editingRecord.actualQty = $('edit-actual-qty').value !== '' ? Number($('edit-actual-qty').value) : editingRecord.actualQty;
     editingRecord.defect = $('edit-defect').value !== '' ? Number($('edit-defect').value) : 0;
     editingRecord.note = $('edit-note').value.trim();
+    editingRecord.workMinutes = $('edit-work-minutes').value !== '' ? Number($('edit-work-minutes').value) : editingRecord.workMinutes;
     try{
       await gasSet(editingKey, editingRecord);
       $('edit-modal').hidden = true;
@@ -1339,11 +1370,12 @@
         $('csv-btn').disabled = false;
         return;
       }
-      const header = ['日付','作業者名','注文番号','製作品番','計画数量','実績数量','不良数','開始時刻','終了時刻','中断回数','中断時間(分)','状態','備考'];
+      const header = ['日付','作業者名','注文番号','製作品番','計画数量','実績数量','不良数','開始時刻','終了時刻','中断回数','中断時間(分)','実作業時間(分)','状態','備考'];
       const rows = filtered.map(r => [
         r.date, r.worker, r.orderNo||'', r.product||'', r.plannedQty ?? '', r.actualQty ?? '',
         r.defect ?? 0, fmtTime(r.startTime), fmtTime(r.endTime),
         r.pauseCount ?? 0, r.pausedMinutes ? Math.round(r.pausedMinutes) : 0,
+        r.workMinutes !== undefined && r.workMinutes !== '' ? Math.round(r.workMinutes) : '',
         r.status==='completed' ? '完了' : '作業中', r.note||''
       ]);
       const csvLines = [header, ...rows].map(row =>
