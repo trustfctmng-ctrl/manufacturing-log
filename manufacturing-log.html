@@ -114,7 +114,7 @@
   }
   label .req{color:var(--danger); margin-left:2px;}
   label .opt{color:var(--ink-soft); font-weight:400; margin-left:4px; font-size:11px;}
-  input[type=text], input[type=date], input[type=number], textarea{
+  input[type=text], input[type=date], input[type=number], textarea, select{
     width:100%;
     font-family:'Noto Sans JP',sans-serif;
     font-size:16px;
@@ -124,7 +124,8 @@
     background:#FCFCFB;
     color:var(--ink);
   }
-  input:focus, textarea:focus, button:focus-visible{
+  select{ height:44px; }
+  input:focus, textarea:focus, select:focus, button:focus-visible{
     outline:2.5px solid var(--steel);
     outline-offset:1px;
     border-color:var(--steel);
@@ -468,7 +469,9 @@
       <div class="card" id="worker-input-block">
         <div class="field">
           <label>作業者名<span class="req">*</span></label>
-          <input type="text" id="f-worker" placeholder="例）山田 太郎" autocomplete="off">
+          <select id="f-worker">
+            <option value="">選択してください</option>
+          </select>
         </div>
         <button class="btn-ghost" id="btn-save-worker" style="padding:8px; margin-top:2px;">この名前をこの端末に保存する</button>
       </div>
@@ -707,6 +710,31 @@
     if(!res.ok) throw new Error('削除に失敗しました(HTTP ' + res.status + ')');
     return res.json();
   }
+  async function gasGetWorkers(){
+    const res = await fetch(GAS_URL + '?action=workers');
+    if(!res.ok) throw new Error('作業者一覧の取得に失敗しました(HTTP ' + res.status + ')');
+    const data = await res.json();
+    return data.workers || [];
+  }
+
+  /* ============ 作業者名リストの読み込み ============ */
+  async function loadWorkerOptions(){
+    const select = $('f-worker');
+    let savedName = '';
+    try{ savedName = localStorage.getItem('worker-name') || ''; }catch(e){}
+    try{
+      const workers = await gasGetWorkers();
+      select.innerHTML = '<option value="">選択してください</option>' +
+        workers.map(name => '<option value="' + name.replace(/"/g,'&quot;') + '">' + name + '</option>').join('');
+      if(savedName && workers.includes(savedName)){
+        select.value = savedName;
+      }
+    }catch(e){
+      console.error('loadWorkerOptions error', e);
+      select.innerHTML = '<option value="">読み込みに失敗しました</option>';
+    }
+  }
+  loadWorkerOptions();
 
   /* ============ 作業者名の記憶(端末内のみ) ============ */
   function refreshWorkerUI(){
